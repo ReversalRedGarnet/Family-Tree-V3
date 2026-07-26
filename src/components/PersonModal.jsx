@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Modal from './Modal';
 import Tooltip, { InfoDot } from './Tooltip';
 import {
   GENDERS,
-  SHAPES,
   COLOR_THEMES,
-  MAX_PHOTO_BYTES,
+  DEFAULT_GENDER,
   PARTNER_TYPES,
   PARENT_TYPES,
   SIBLING_TYPES,
@@ -23,13 +22,53 @@ function Label({ children, hint }) {
   );
 }
 
-const SHAPE_GLYPH = {
-  rounded: '▢',
-  square: '◻',
-  circle: '◯',
-  diamond: '◇',
-  hexagon: '⬡',
-};
+// The three zones from the design, each introduced by an eyebrow and split
+// by a dotted rule.
+function Zone({ eyebrow, first, children }) {
+  return (
+    <section className={first ? '' : 'mt-5'}>
+      {!first && <hr className="zone-rule mb-4" />}
+      <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-deep">
+        {eyebrow}
+      </p>
+      <div className="space-y-3">{children}</div>
+    </section>
+  );
+}
+
+// A pair of choices with "or" between them, as drawn in the design.
+function ChoicePair({ options, value, onChange, name }) {
+  return (
+    <div className="flex items-center gap-2">
+      {options.map((option, i) => (
+        <div key={option.id} className="contents">
+          {i > 0 && <span className="shrink-0 text-xs text-mist">or</span>}
+          <label
+            className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm transition-colors ${
+              value === option.id
+                ? 'border-cyan bg-cyan-wash font-medium text-cyan-deep'
+                : 'border-hairline text-ink hover:border-cyan-soft'
+            }`}
+          >
+            <input
+              type="radio"
+              name={name}
+              checked={value === option.id}
+              onChange={() => onChange(option.id)}
+              className="h-4 w-4 accent-[#0EA5B7]"
+            />
+            {option.label}
+          </label>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const LIVING_OPTIONS = [
+  { id: 'alive', label: 'Alive' },
+  { id: 'deceased', label: 'Deceased' },
+];
 
 function labelFor(rel, otherName) {
   if (rel.kind === 'partner') {
@@ -39,14 +78,28 @@ function labelFor(rel, otherName) {
       : `${type} · ${otherName}`;
   }
   if (rel.kind === 'parent') {
-    const type = PARENT_TYPES.find((t) => t.id === rel.type)?.label || 'Parent';
-    return `${type} · ${otherName}`;
+    return `${PARENT_TYPES.find((t) => t.id === rel.type)?.label || 'Parent'} · ${otherName}`;
   }
   if (rel.kind === 'sibling') {
-    const type = SIBLING_TYPES.find((t) => t.id === rel.type)?.label || 'Sibling';
-    return `${type} · ${otherName}`;
+    return `${SIBLING_TYPES.find((t) => t.id === rel.type)?.label || 'Sibling'} · ${otherName}`;
   }
   return `${rel.label || 'Other'} · ${otherName}`;
+}
+
+// Years only. Strips anything that isn't a digit so the field can't hold
+// something the tree won't be able to read back.
+function YearInput({ value, onChange, placeholder }) {
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      maxLength={4}
+      value={value || ''}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 4))}
+      className={field}
+    />
+  );
 }
 
 export default function PersonModal({
@@ -59,43 +112,26 @@ export default function PersonModal({
   onCancel,
   onRequestDelete,
   onDeleteRelationship,
-  onPhotoError,
 }) {
   const [form, setForm] = useState({});
-  const fileRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
     setForm({
       firstName: initialPerson?.firstName || '',
       lastName: initialPerson?.lastName || '',
-      gender: initialPerson?.gender || 'unspecified',
-      birthDate: initialPerson?.birthDate || '',
-      deathDate: initialPerson?.deathDate || '',
+      additionalNames: initialPerson?.additionalNames || '',
+      gender: initialPerson?.gender || DEFAULT_GENDER,
+      birthYear: initialPerson?.birthYear || '',
+      deathYear: initialPerson?.deathYear || '',
       living: initialPerson?.living !== false,
       occupation: initialPerson?.occupation || '',
       notes: initialPerson?.notes || '',
-      photo: initialPerson?.photo || null,
-      shape: initialPerson?.shape || SHAPES[0],
       colorTheme: initialPerson?.colorTheme || COLOR_THEMES[0].id,
     });
   }, [open, initialPerson]);
 
   const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
-
-  const handlePhoto = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > MAX_PHOTO_BYTES) {
-      onPhotoError('That photo is over 2 MB. Pick a smaller one.');
-      if (fileRef.current) fileRef.current.value = '';
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (event) => set('photo', event.target?.result);
-    reader.onerror = () => onPhotoError("That file couldn't be read. Try another image.");
-    reader.readAsDataURL(file);
-  };
 
   const links =
     mode === 'edit' && initialPerson
@@ -104,15 +140,17 @@ export default function PersonModal({
         )
       : [];
 
+  const deceased = form.living === false;
+
   return (
     <Modal
       open={open}
       title={mode === 'edit' ? 'Edit person' : 'Add a person'}
-      subtitle={mode === 'edit' ? undefined : 'Only a name is needed — everything else is optional.'}
+      subtitle="Only name, gender and living status are needed — everything else is optional."
       onClose={onCancel}
-      size="lg"
+      size="md"
     >
-      <div className="space-y-4">
+      <Zone eyebrow="Mandatory" first>
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <Label>First name</Label>
@@ -120,6 +158,7 @@ export default function PersonModal({
               autoFocus
               type="text"
               value={form.firstName || ''}
+              placeholder="Amara"
               onChange={(e) => set('firstName', e.target.value)}
               className={field}
             />
@@ -129,65 +168,62 @@ export default function PersonModal({
             <input
               type="text"
               value={form.lastName || ''}
+              placeholder="Okafor"
               onChange={(e) => set('lastName', e.target.value)}
               className={field}
             />
           </label>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block">
-            <Label>Gender</Label>
-            <select value={form.gender} onChange={(e) => set('gender', e.target.value)} className={field}>
-              {GENDERS.map((g) => (
-                <option key={g.id} value={g.id}>{g.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <Label>Born</Label>
-            <input
-              type="date"
-              value={form.birthDate || ''}
-              onChange={(e) => set('birthDate', e.target.value)}
-              className={field}
-            />
-          </label>
+        <div>
+          <Label hint="Sets the card shape: a triangle for male, a circle for female.">
+            Gender
+          </Label>
+          <ChoicePair
+            name="gender"
+            options={GENDERS}
+            value={form.gender}
+            onChange={(id) => set('gender', id)}
+          />
         </div>
 
-        <div className="rounded-xl border border-hairline p-3">
-          <label className="flex cursor-pointer items-center gap-2.5">
-            <input
-              type="checkbox"
-              checked={form.living !== false}
-              onChange={(e) => set('living', e.target.checked)}
-              className="h-4 w-4 accent-[#0EA5B7]"
-            />
-            <span className="text-sm text-ink">Still living</span>
-          </label>
-
-          {form.living === false && (
-            <label className="mt-3 block">
-              <Label hint="Deceased cards get a grey band along the bottom so they stand out on the board.">
-                Died
-              </Label>
-              <input
-                type="date"
-                value={form.deathDate || ''}
-                onChange={(e) => set('deathDate', e.target.value)}
-                className={field}
-              />
-            </label>
-          )}
+        <div>
+          <Label>Living status</Label>
+          <ChoicePair
+            name="living"
+            options={LIVING_OPTIONS}
+            value={deceased ? 'deceased' : 'alive'}
+            onChange={(id) => set('living', id === 'alive')}
+          />
         </div>
+      </Zone>
+
+      <Zone eyebrow="Additional details">
+        <label className="block">
+          <Label hint="Middle names, a maiden name, a nickname — whatever helps tell them apart.">
+            Additional names
+          </Label>
+          <input
+            type="text"
+            value={form.additionalNames || ''}
+            placeholder="Ngozi (née Eze)"
+            onChange={(e) => set('additionalNames', e.target.value)}
+            className={field}
+          />
+        </label>
+
+        <label className="block">
+          <Label>Year of birth</Label>
+          <YearInput value={form.birthYear} onChange={(v) => set('birthYear', v)} placeholder="1953" />
+        </label>
 
         <label className="block">
           <Label>Occupation</Label>
           <input
             type="text"
             value={form.occupation || ''}
-            onChange={(e) => set('occupation', e.target.value)}
             placeholder="Baker, teacher, ship's engineer…"
+            onChange={(e) => set('occupation', e.target.value)}
             className={field}
           />
         </label>
@@ -214,112 +250,71 @@ export default function PersonModal({
           </div>
         </div>
 
-        <div>
-          <Label>Card shape</Label>
-          <div className="flex flex-wrap gap-2">
-            {SHAPES.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => set('shape', s)}
-                aria-pressed={form.shape === s}
-                className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs capitalize transition-colors ${
-                  form.shape === s
-                    ? 'border-cyan bg-cyan-wash text-cyan-deep'
-                    : 'border-hairline text-mist hover:border-cyan-soft'
-                }`}
-              >
-                <span aria-hidden="true">{SHAPE_GLYPH[s]}</span>
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <Label>Photo</Label>
-          <div className="flex items-center gap-3">
-            {form.photo && (
-              <img src={form.photo} alt="" className="h-14 w-14 shrink-0 rounded-full object-cover" />
-            )}
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              onChange={handlePhoto}
-              className="min-w-0 flex-1 text-xs text-mist file:mr-3 file:rounded-lg file:border-0 file:bg-cyan-wash file:px-3 file:py-2 file:text-xs file:font-medium file:text-cyan-deep"
-            />
-            {form.photo && (
-              <button
-                type="button"
-                onClick={() => {
-                  set('photo', null);
-                  if (fileRef.current) fileRef.current.value = '';
-                }}
-                className="shrink-0 rounded-lg border border-hairline px-2.5 py-1.5 text-xs text-mist transition-colors hover:text-rose"
-              >
-                Remove
-              </button>
-            )}
-          </div>
-          <p className="mt-1.5 text-xs text-mist/80">Up to 2 MB. Never uploaded anywhere.</p>
-        </div>
-
         <label className="block">
           <Label>Notes</Label>
           <textarea
             rows={3}
             value={form.notes || ''}
+            placeholder="Anything worth remembering about them."
             onChange={(e) => set('notes', e.target.value)}
-            placeholder="Anything worth remembering."
             className={`${field} resize-y`}
           />
         </label>
+      </Zone>
 
-        {mode === 'edit' && (
-          <div>
-            <Label hint="Unlinking only removes the connection — both people stay on the board.">
-              Links ({links.length})
-            </Label>
-            {links.length === 0 ? (
-              <p className="text-xs text-mist">
-                Not linked to anyone yet. Drag their card onto someone else's to connect them.
-              </p>
-            ) : (
-              <ul className="space-y-1.5">
-                {links.map((rel) => {
-                  const otherId = rel.a === initialPerson.id ? rel.b : rel.a;
-                  const other = people[otherId];
-                  const otherName = other
-                    ? `${other.firstName} ${other.lastName}`.trim() || 'Unnamed'
-                    : 'Someone';
-                  const isParentOf = rel.kind === 'parent' && rel.a === initialPerson.id;
-                  return (
-                    <li
-                      key={rel.id}
-                      className="flex items-center gap-2 rounded-xl bg-paper px-3 py-2 text-xs text-ink"
+      {deceased && (
+        <Zone eyebrow="If applicable">
+          <label className="block">
+            <Label>Year of death</Label>
+            <YearInput
+              value={form.deathYear}
+              onChange={(v) => set('deathYear', v)}
+              placeholder="2011"
+            />
+          </label>
+        </Zone>
+      )}
+
+      {mode === 'edit' && (
+        <Zone eyebrow={`Links (${links.length})`}>
+          {links.length === 0 ? (
+            <p className="text-xs leading-relaxed text-mist">
+              Not linked to anyone yet. Drag their card onto someone else's to connect them.
+            </p>
+          ) : (
+            <ul className="space-y-1.5">
+              {links.map((rel) => {
+                const otherId = rel.a === initialPerson.id ? rel.b : rel.a;
+                const other = people[otherId];
+                const otherName = other
+                  ? `${other.firstName} ${other.lastName}`.trim() || 'Unnamed'
+                  : 'Someone';
+                const isParentOf = rel.kind === 'parent' && rel.a === initialPerson.id;
+                return (
+                  <li
+                    key={rel.id}
+                    className="flex items-center gap-2 rounded-xl bg-paper px-3 py-2 text-xs text-ink"
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      {rel.kind === 'parent' && (
+                        <span className="text-mist">{isParentOf ? 'Parent of ' : 'Child of '}</span>
+                      )}
+                      {labelFor(rel, otherName)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteRelationship(rel.id)}
+                      className="shrink-0 rounded-lg px-2 py-1 text-mist transition-colors hover:bg-rose/10 hover:text-rose"
                     >
-                      <span className="min-w-0 flex-1 truncate">
-                        {rel.kind === 'parent' && (
-                          <span className="text-mist">{isParentOf ? 'Parent of ' : 'Child of '}</span>
-                        )}
-                        {labelFor(rel, otherName)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteRelationship(rel.id)}
-                        className="shrink-0 rounded-lg px-2 py-1 text-mist transition-colors hover:bg-rose/10 hover:text-rose"
-                      >
-                        Unlink
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        )}
-      </div>
+                      Unlink
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Zone>
+      )}
 
       <div className="mt-6 flex gap-2">
         {mode === 'edit' && onRequestDelete && (
