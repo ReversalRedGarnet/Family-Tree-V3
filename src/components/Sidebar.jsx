@@ -44,7 +44,7 @@ function Section({ title, hint, children, defaultOpen = true }) {
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center justify-between px-4 py-3 text-left"
       >
-        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-mist">{title}</span>
+        <span className="tnum text-[11px] font-semibold uppercase tracking-[0.12em] text-mist">{title}</span>
         <span className={`text-mist transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true">
           ⌃
         </span>
@@ -170,7 +170,7 @@ export default function Sidebar({
         <Action label="Export" detail="Save the board as a PNG or PDF." onClick={onRequestExport} tone="accent">↓</Action>
       </div>
 
-      <div className="flex gap-4 border-t border-hairline px-4 py-2.5 font-mono text-[11px] text-mist">
+      <div className="flex gap-4 border-t border-hairline px-4 py-2.5 tnum text-[11px] text-mist">
         <span>{personCount} people</span>
         <span>{linkCount} links</span>
         <span>{selectedIds.length} selected</span>
@@ -192,7 +192,7 @@ export default function Sidebar({
           <div className="space-y-3">
             {roster.map(([gen, list]) => (
               <div key={gen}>
-                <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.12em] text-mist/70">
+                <p className="mb-1 tnum text-[10px] font-semibold uppercase tracking-[0.12em] text-mist/70">
                   Generation {gen + 1}
                 </p>
                 <div className="space-y-1">
@@ -211,7 +211,7 @@ export default function Sidebar({
                       <span className="flex-1 truncate">{fullName(person)}</span>
                       {person.living === false && (
                         <span
-                          className={`shrink-0 font-mono text-[10px] ${
+                          className={`shrink-0 text-[10px] ${
                             selectedIds.includes(person.id) ? 'text-white/80' : 'text-slate-quiet'
                           }`}
                         >
