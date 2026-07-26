@@ -39,7 +39,7 @@ export default function ExportModal({ open, busy, onExportPng, onExportPdf, onCa
         className="w-full rounded-xl border border-hairline bg-white px-3 py-2.5 text-sm text-ink placeholder:text-mist/60 focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/30 disabled:opacity-50"
       />
 
-      <p className="mt-2.5 rounded-lg bg-paper px-3 py-2 font-mono text-[11px] leading-relaxed text-mist">
+      <p className="mt-2.5 rounded-lg bg-paper px-3 py-2 tnum text-[11px] leading-relaxed text-mist">
         {memo}
       </p>
 
