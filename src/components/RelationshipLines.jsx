@@ -35,13 +35,6 @@ function Marker({ kind, x, y, color }) {
           <Line points={[x + 1, y + 7, x + 6, y - 7]} stroke={color} strokeWidth={2} lineCap="round" />
         </Group>
       );
-    case 'cross':
-      return (
-        <Group listening={false}>
-          <Line points={[x, y - 8, x, y + 8]} stroke={color} strokeWidth={2} lineCap="round" />
-          <Line points={[x - 4.5, y - 3, x + 4.5, y - 3]} stroke={color} strokeWidth={2} lineCap="round" />
-        </Group>
-      );
     default:
       return null;
   }
@@ -96,14 +89,17 @@ export default function RelationshipLines({ people, relationships, positions, on
       listening: false,
     };
 
+    const left = Math.min(...xs);
+    const right = Math.max(...xs);
+
     elements.push(
       <Group key={`pg-${i}`}>
         {/* trunk down from the parent(s) */}
         <Line points={[anchorX, anchorY, anchorX, busY]} {...common} />
-        {/* the shared sibling bar */}
-        {childPts.length > 1 && (
-          <Line points={[Math.min(...xs), busY, Math.max(...xs), busY]} {...common} />
-        )}
+        {/* The horizontal run. Needed whenever the trunk and a child don't
+            share an X — including the single-child case, where leaving it
+            out left two disconnected verticals. */}
+        {right - left > 0.5 && <Line points={[left, busY, right, busY]} {...common} />}
         {/* a drop to each child */}
         {childPts.map((pt, ci) => (
           <Fragment key={`pg-${i}-c-${ci}`}>
