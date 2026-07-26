@@ -43,6 +43,7 @@ export default function RelationshipModal({
   const [siblingType, setSiblingType] = useState(SIBLING_TYPES[0].id);
   const [parentType, setParentType] = useState(PARENT_TYPES[0].id);
   const [label, setLabel] = useState('');
+  const [deceasedId, setDeceasedId] = useState(null);
 
   useEffect(() => {
     if (!open) return;
@@ -55,6 +56,7 @@ export default function RelationshipModal({
     setSiblingType(SIBLING_TYPES[0].id);
     setParentType(PARENT_TYPES[0].id);
     setLabel('');
+    setDeceasedId(null);
   }, [open, presetKind]);
 
   if (!open) return null;
@@ -68,14 +70,23 @@ export default function RelationshipModal({
   const b = swapped ? personA : personB;
   const together = partnerStatus === 'together';
 
+  // "Widowed" only means something once we know who was lost. If the board
+  // already says one of them has died, that answers it.
+  const alreadyGone = [personA, personB].filter((id) => people[id]?.living === false);
+  const needsWhoDied =
+    kind === 'partner' && partnerStatus === 'widowed' && alreadyGone.length === 0;
+  const chosenDeceased = needsWhoDied ? deceasedId : alreadyGone[0] || null;
+  const blocked = needsWhoDied && !deceasedId;
+
   const submit = () => {
     if (kind === 'partner') {
-      onConfirm('partner', a, b, {
-        type: partnerType,
-        status: partnerStatus,
-        startDate,
-        endDate: together ? '' : endDate,
-      });
+      onConfirm(
+        'partner',
+        a,
+        b,
+        { type: partnerType, status: partnerStatus, startDate, endDate: together ? '' : endDate },
+        partnerStatus === 'widowed' ? chosenDeceased : null
+      );
     } else if (kind === 'parent') {
       onConfirm('parent', a, b, { type: parentType });
     } else if (kind === 'sibling') {
@@ -157,6 +168,38 @@ export default function RelationshipModal({
                 </select>
               </label>
             </div>
+            {needsWhoDied && (
+              <fieldset className="rounded-xl border border-cyan/40 bg-cyan-wash p-3">
+                <legend className="px-1 text-xs font-medium text-cyan-deep">
+                  Who has passed away?
+                </legend>
+                <div className="mt-1 space-y-1.5">
+                  {[a, b].map((id) => (
+                    <label key={id} className="flex cursor-pointer items-center gap-2.5">
+                      <input
+                        type="radio"
+                        name="who-died"
+                        checked={deceasedId === id}
+                        onChange={() => setDeceasedId(id)}
+                        className="h-4 w-4 accent-[#0EA5B7]"
+                      />
+                      <span className="text-sm text-ink">{nameOf(id)}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-mist">
+                  They'll be marked as no longer living.
+                </p>
+              </fieldset>
+            )}
+
+            {alreadyGone.length > 0 && partnerStatus === 'widowed' && (
+              <p className="rounded-xl bg-paper px-3 py-2 text-xs text-mist">
+                {alreadyGone.map(nameOf).join(' and ')}{' '}
+                {alreadyGone.length > 1 ? 'are' : 'is'} already marked as no longer living.
+              </p>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
                 <Label>Started</Label>
@@ -225,7 +268,9 @@ export default function RelationshipModal({
         </button>
         <button
           onClick={submit}
-          className="flex-1 rounded-xl bg-cyan px-4 py-2.5 font-medium text-white transition-colors hover:bg-cyan-deep"
+          disabled={blocked}
+          title={blocked ? 'Choose which of them has passed away first' : undefined}
+          className="flex-1 rounded-xl bg-cyan px-4 py-2.5 font-medium text-white transition-colors hover:bg-cyan-deep disabled:cursor-not-allowed disabled:opacity-40"
         >
           Link them
         </button>
