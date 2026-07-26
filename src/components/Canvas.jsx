@@ -74,6 +74,19 @@ const Canvas = forwardRef(function Canvas(
 
   useImperativeHandle(ref, () => stageRef.current, []);
 
+  // Konva paints text to a bitmap, so it won't pick up Proxima Nova on its
+  // own once the webfont lands. Force one redraw when fonts settle.
+  useEffect(() => {
+    if (typeof document === 'undefined' || !document.fonts?.ready) return;
+    let cancelled = false;
+    document.fonts.ready.then(() => {
+      if (!cancelled) stageRef.current?.batchDraw();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return undefined;
@@ -308,7 +321,7 @@ const Canvas = forwardRef(function Canvas(
               text={memo}
               x={bounds.minX + 28}
               y={bounds.maxY - 52}
-              fontFamily="Fraunces"
+              fontFamily="Proxima Nova, proxima-nova, system-ui, sans-serif"
               fontSize={17}
               fill="#5B7C85"
               listening={false}
@@ -340,7 +353,7 @@ const Canvas = forwardRef(function Canvas(
         <ZoomButton label="Zoom out" onClick={() => zoomAround(1 / 1.2, size.width / 2, size.height / 2)}>
           <span className="text-lg leading-none">−</span>
         </ZoomButton>
-        <span className="w-11 select-none text-center font-mono text-xs text-mist">
+        <span className="tnum w-11 select-none text-center text-xs text-mist">
           {Math.round(view.scale * 100)}%
         </span>
         <ZoomButton label="Zoom in" onClick={() => zoomAround(1.2, size.width / 2, size.height / 2)}>
