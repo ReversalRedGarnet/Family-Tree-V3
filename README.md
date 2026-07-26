@@ -4,16 +4,27 @@ A fun, single-session, browser-based whiteboard for building a family tree with
 friends. No accounts, no backend, nothing saved. Open it, build a tree, export
 a picture or PDF, close the tab.
 
-Visual theme: a soft off-white board in cyan and white, with people as clean
-cards and a small vocabulary of connector styles — a filled ring for marriage,
-an open ring for engagement, a double-slash break for divorce, a cross for
+Visual theme: a soft off-white board in cyan and white. Cards are shaped by
+gender — a triangle for male, a circle for female — and a small vocabulary of
+connector styles carries the relationship: a filled ring for marriage, an open
+ring for engagement, a double-slash break for divorce, a plain grey line for
 widowed, a dotted arch for siblings, and a rounded drop for parent and child.
 The sidebar carries a key showing the same glyphs.
 
 Relationships are deliberately unconstrained: siblings don't need a parent on
 the board, children don't need a couple, and any two people can be linked
 without setting anything else up first. Generation rows are computed from
-whatever links exist, and cards you drag are left exactly where you put them.
+whatever links exist. New cards are placed beside whoever they're related to,
+on whichever side has room, and existing cards shuffle right to make space.
+Cards you drag are left exactly where you put them.
+
+## Typeface
+
+The whole app is set in Proxima Nova, which is a commercial licence — it is
+not on Google Fonts and will not load until you supply it. See the comment at
+the top of `index.html` for the two ways to do that (Adobe Fonts, or a
+purchased webfont self-hosted from `public/fonts/`). Until then the browser
+falls back to the system UI font and everything else works normally.
 
 ## Hosting it on GitHub Pages
 

@@ -6,13 +6,25 @@
     <title>Family Tree Editor</title>
     <meta name="theme-color" content="#0EA5B7" />
     <meta name="description" content="Build a family tree together in the browser. Nothing saved, export when you're done." />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
-  </head>
+    <!--
+      Proxima Nova is a commercial typeface (Mark Simonson Studio). It is not
+      on Google Fonts, so it has to be licensed before it will load. Pick ONE
+      of the two options below and uncomment it.
+
+      OPTION A — Adobe Fonts (needs a Creative Cloud subscription).
+      Create a Web Project at fonts.adobe.com, add Proxima Nova, then paste
+      your own kit URL here:
+
+      <link rel="stylesheet" href="https://use.typekit.net/YOUR_KIT_ID.css" />
+
+      OPTION B — self-hosted (needs a purchased webfont licence).
+      Drop the .woff2 files into public/fonts/ and uncomment the @font-face
+      block at the top of src/index.css.
+
+      Until one of these is in place the browser falls back to the system UI
+      font. Nothing else in the app needs to change either way.
+    -->
+</head>
   <body class="bg-paper">
     <div id="root"></div>
     <script type="module" src="/src/index.jsx"></script>

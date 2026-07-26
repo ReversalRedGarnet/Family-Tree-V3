@@ -21,9 +21,11 @@ export default {
         },
       },
       fontFamily: {
-        display: ['Fraunces', 'Georgia', 'serif'],
-        body: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+        // One family across the whole app. The tail is a browser fallback
+        // only — see the licensing note in index.html.
+        display: ['"Proxima Nova"', 'proxima-nova', 'system-ui', 'sans-serif'],
+        body: ['"Proxima Nova"', 'proxima-nova', 'system-ui', 'sans-serif'],
+        mono: ['"Proxima Nova"', 'proxima-nova', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
         card: '0 1px 2px rgba(16,58,68,0.06), 0 6px 16px rgba(16,58,68,0.08)',
