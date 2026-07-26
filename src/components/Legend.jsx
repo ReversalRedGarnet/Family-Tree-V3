@@ -47,12 +47,6 @@ function Glyph({ styleKey }) {
           <line x1={mid + 1} y1="15" x2={mid + 6} y2="3" stroke={s.color} strokeWidth="2" strokeLinecap="round" />
         </>
       )}
-      {s.marker === 'cross' && (
-        <>
-          <line x1={mid} y1="1.5" x2={mid} y2="16.5" stroke={s.color} strokeWidth="2" strokeLinecap="round" />
-          <line x1={mid - 4} y1="6" x2={mid + 4} y2="6" stroke={s.color} strokeWidth="2" strokeLinecap="round" />
-        </>
-      )}
       {styleKey === 'parent' && <circle cx="41" cy="9" r="2.6" fill={s.color} />}
     </svg>
   );
@@ -84,7 +78,7 @@ export default function Legend() {
         <span className="flex h-[18px] w-11 shrink-0 items-end justify-center">
           <span className="h-2.5 w-9 rounded-sm bg-slate-quiet" />
         </span>
-        <span className="text-xs text-mist">Deceased (card has a grey band)</span>
+        <span className="text-xs text-mist">Deceased</span>
       </li>
     </ul>
   );
