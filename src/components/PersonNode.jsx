@@ -1,31 +1,40 @@
-import { Group, Rect, Ellipse, Line, Circle, Text, Image as KonvaImage } from 'react-konva';
-import { CARD_WIDTH, CARD_HEIGHT, COLOR_THEMES } from '../utils/constants';
-import useHtmlImage from '../utils/useHtmlImage';
+import { Group, Ellipse, Line, Rect, Circle, Text } from 'react-konva';
+import { CARD_WIDTH, CARD_HEIGHT, COLOR_THEMES, shapeForGender } from '../utils/constants';
+import { formatLifespan } from '../utils/dates';
 
 const W = CARD_WIDTH;
 const H = CARD_HEIGHT;
+const FONT = 'Proxima Nova, proxima-nova, system-ui, sans-serif';
 
-// Deceased cards read differently from across the board: cooled-down fill,
-// a full-width slate band along the bottom carrying the lifespan, and a
-// desaturated portrait. No hunting for a tiny dagger glyph.
+// The triangle is drawn slightly larger than the nominal card box so its
+// lower half is wide enough to hold a name.
+const APEX_Y = -H / 2 - 18;
+const BASE_Y = H / 2;
+const BASE_HALF = W / 2 + 10;
+const TRIANGLE = [0, APEX_Y, BASE_HALF, BASE_Y, -BASE_HALF, BASE_Y];
+
 const LIVING = { fill: '#FFFFFF', title: '#103A44', sub: '#5B7C85' };
 const GONE = { fill: '#EEF3F4', title: '#4A6870', sub: '#7A9299', band: '#7A9299' };
 
-function polygonPoints(shape) {
-  const hw = W / 2;
-  const hh = H / 2;
-  if (shape === 'diamond') return [0, -hh - 16, hw, 0, 0, hh + 16, -hw, 0];
-  if (shape === 'hexagon') {
-    const cut = hw * 0.32;
-    return [-hw + cut, -hh, hw - cut, -hh, hw, 0, hw - cut, hh, -hw + cut, hh, -hw, 0];
-  }
-  return null;
-}
+const BAND_HEIGHT = 20;
 
-function yearOf(dateStr) {
-  if (!dateStr) return null;
-  const m = String(dateStr).match(/^(\d{3,4})/);
-  return m ? m[1] : null;
+// Clipping the memorial band to the card silhouette means one treatment
+// works for both shapes: a trapezoid on a triangle, a chord on a circle.
+function clipToShape(shape) {
+  if (shape === 'circle') {
+    return (ctx) => {
+      ctx.beginPath();
+      ctx.ellipse(0, 0, W / 2, H / 2, 0, 0, Math.PI * 2);
+      ctx.closePath();
+    };
+  }
+  return (ctx) => {
+    ctx.beginPath();
+    ctx.moveTo(0, APEX_Y);
+    ctx.lineTo(BASE_HALF, BASE_Y);
+    ctx.lineTo(-BASE_HALF, BASE_Y);
+    ctx.closePath();
+  };
 }
 
 export default function PersonNode({
@@ -41,41 +50,39 @@ export default function PersonNode({
   onDblClick,
   onContextMenu,
 }) {
+  const shape = shapeForGender(person.gender);
+  const isCircle = shape === 'circle';
   const theme = COLOR_THEMES.find((c) => c.id === person.colorTheme)?.hex || '#0EA5B7';
-  const image = useHtmlImage(person.photo);
-  const points = polygonPoints(person.shape);
   const gone = person.living === false;
   const tone = gone ? GONE : LIVING;
 
   const name = `${person.firstName || 'Unnamed'} ${person.lastName || ''}`.trim();
-  const birth = yearOf(person.birthDate);
-  const death = yearOf(person.deathDate);
-  const lifespan = gone
-    ? `${birth || '?'} – ${death || '?'}`
-    : birth
-      ? `b. ${birth}`
-      : '';
+  const lifespan = formatLifespan(person);
 
   const stroke = highlighted ? '#0EA5B7' : selected ? '#0B6E7C' : gone ? '#C3D3D7' : theme;
   const shapeProps = {
     fill: tone.fill,
     stroke,
-    strokeWidth: highlighted ? 3.5 : selected ? 3 : 1.75,
+    strokeWidth: highlighted ? 3.5 : selected ? 3 : 2,
     shadowColor: highlighted ? 'rgba(14,165,183,0.45)' : 'rgba(16,58,68,0.18)',
     shadowBlur: highlighted ? 18 : 10,
     shadowOffsetY: 3,
     shadowOpacity: gone ? 0.5 : 1,
+    lineJoin: 'round',
   };
 
-  const hasPhoto = Boolean(image);
-  const bandHeight = 18;
+  // A triangle narrows toward the apex, so its text sits lower and reads
+  // across a shorter measure than a circle's does.
+  const nameY = isCircle ? (lifespan ? -16 : -8) : -8;
+  const nameWidth = isCircle ? W - 36 : 96;
+  const lifespanY = isCircle ? 4 : 12;
+  const lifespanWidth = isCircle ? W - 36 : 116;
 
   return (
     <Group
       x={x}
       y={y}
       draggable
-      opacity={gone ? 0.94 : 1}
       onDragMove={(e) => onDragMove(person.id, e.target.x(), e.target.y())}
       onDragEnd={(e) => onDragEnd(person.id, e.target.x(), e.target.y(), e.target)}
       onClick={(e) => onClick(person.id, e)}
@@ -92,102 +99,69 @@ export default function PersonNode({
         if (container) container.style.cursor = 'default';
       }}
     >
-      {person.shape === 'circle' ? (
+      {isCircle ? (
         <Ellipse radiusX={W / 2} radiusY={H / 2} {...shapeProps} />
-      ) : points ? (
-        <Line points={points} closed {...shapeProps} />
       ) : (
-        <Rect
-          x={-W / 2}
-          y={-H / 2}
-          width={W}
-          height={H}
-          cornerRadius={person.shape === 'rounded' ? 16 : 3}
-          {...shapeProps}
-        />
-      )}
-
-      {/* Colour tab: a small stripe of the person's theme along the top. */}
-      {person.shape !== 'circle' && !points && (
-        <Rect
-          x={-W / 2 + 14}
-          y={-H / 2 - 1}
-          width={W - 28}
-          height={3}
-          cornerRadius={2}
-          fill={gone ? '#C3D3D7' : theme}
-          listening={false}
-        />
-      )}
-
-      {hasPhoto && (
-        <Group clipFunc={(ctx) => ctx.arc(-W / 2 + 26, 0, 17, 0, Math.PI * 2, false)}>
-          <KonvaImage
-            image={image}
-            x={-W / 2 + 9}
-            y={-17}
-            width={34}
-            height={34}
-            opacity={gone ? 0.55 : 1}
-          />
-        </Group>
+        <Line points={TRIANGLE} closed {...shapeProps} />
       )}
 
       <Text
         text={name}
-        x={hasPhoto ? -W / 2 + 50 : -W / 2 + 12}
-        y={lifespan ? -14 : -7}
-        width={hasPhoto ? W - 62 : W - 24}
-        align={hasPhoto ? 'left' : 'center'}
-        fontFamily="Inter"
+        x={-nameWidth / 2}
+        y={nameY}
+        width={nameWidth}
+        align="center"
+        fontFamily={FONT}
         fontStyle="600"
         fontSize={13.5}
         lineHeight={1.15}
         fill={tone.title}
         wrap="word"
         ellipsis
+        listening={false}
       />
 
       {lifespan && !gone && (
         <Text
           text={lifespan}
-          x={hasPhoto ? -W / 2 + 50 : -W / 2 + 12}
-          y={12}
-          width={hasPhoto ? W - 62 : W - 24}
-          align={hasPhoto ? 'left' : 'center'}
-          fontFamily="JetBrains Mono"
-          fontSize={10}
+          x={-lifespanWidth / 2}
+          y={lifespanY}
+          width={lifespanWidth}
+          align="center"
+          fontFamily={FONT}
+          fontSize={10.5}
           fill={tone.sub}
+          listening={false}
         />
       )}
 
-      {/* Memorial band. Only deceased cards carry one, so a full row of
-          cards can be scanned for it without reading a single name. */}
+      {/* Deceased cards carry a grey band along the base, clipped to the
+          card's own outline. Scannable across a whole row without reading
+          a single name. */}
       {gone && (
-        <Group listening={false}>
+        <Group clipFunc={clipToShape(shape)} listening={false}>
           <Rect
-            x={-W / 2}
-            y={H / 2 - bandHeight}
-            width={W}
-            height={bandHeight}
-            cornerRadius={person.shape === 'rounded' ? [0, 0, 16, 16] : [0, 0, 3, 3]}
+            x={-BASE_HALF}
+            y={BASE_Y - BAND_HEIGHT}
+            width={BASE_HALF * 2}
+            height={BAND_HEIGHT}
             fill={GONE.band}
           />
           <Text
-            text={`✝  ${lifespan}`}
-            x={-W / 2}
-            y={H / 2 - bandHeight + 4.5}
-            width={W}
+            text={lifespan ? `✝  ${lifespan}` : '✝'}
+            x={-BASE_HALF}
+            y={BASE_Y - BAND_HEIGHT + (isCircle ? 3.5 : 5)}
+            width={BASE_HALF * 2}
             align="center"
-            fontFamily="JetBrains Mono"
-            fontSize={10}
+            fontFamily={FONT}
+            fontSize={10.5}
             fill="#FFFFFF"
           />
         </Group>
       )}
 
       {conflicted && (
-        <Group x={W / 2 - 12} y={-H / 2 + 4} listening={false}>
+        <Group x={isCircle ? W / 2 - 14 : BASE_HALF - 22} y={-H / 2 + 6} listening={false}>
           <Circle radius={9} fill="#E86A6A" />
           <Text text="!" x={-2.5} y={-6} fontSize={12} fontStyle="bold" fill="#FFFFFF" />
         </Group>
