@@ -1,0 +1,101 @@
+/* ---------------------------------------------------------------------------
+   Proxima Nova, self-hosted (OPTION B — see the note in index.html).
+   Buy a webfont licence, drop the files into public/fonts/, then uncomment.
+   If you're using Adobe Fonts instead, leave this commented out and add the
+   Typekit <link> in index.html.
+
+@font-face {
+  font-family: 'Proxima Nova';
+  src: url('/fonts/proximanova-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Proxima Nova';
+  src: url('/fonts/proximanova-medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Proxima Nova';
+  src: url('/fonts/proximanova-semibold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Proxima Nova';
+  src: url('/fonts/proximanova-bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+--------------------------------------------------------------------------- */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+/* One family everywhere. The tail is only what the browser needs when
+   Proxima Nova hasn't been licensed and loaded yet — no substitute
+   typefaces. 'proxima-nova' is the family name Adobe Fonts serves under. */
+body {
+  font-family: 'Proxima Nova', 'proxima-nova', system-ui, -apple-system, sans-serif;
+  color: #103A44;
+  background: #F6FAFB;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The board: soft off-white with a barely-there grid. */
+.board-surface {
+  background-color: #F6FAFB;
+  background-image:
+    linear-gradient(rgba(14, 165, 183, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(14, 165, 183, 0.06) 1px, transparent 1px);
+  background-size: 32px 32px, 32px 32px;
+}
+
+/* Numbers that used to sit in a mono face now use tabular figures instead,
+   so counts and years still line up in a single-family design. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+:focus-visible {
+  outline: 2px solid #0EA5B7;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.thin-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.thin-scroll::-webkit-scrollbar-thumb { background: #CBE3E8; border-radius: 999px; }
+.thin-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* The dotted rules that separate the form's three zones. */
+.zone-rule {
+  border: 0;
+  border-top: 2px dotted #D3E7EB;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-toast-in { animation: toast-in 180ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
