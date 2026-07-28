@@ -40,7 +40,7 @@ function Marker({ kind, x, y, color }) {
   }
 }
 
-export default function RelationshipLines({ people, relationships, positions, onSelect }) {
+export default function RelationshipLines({ people, relationships, positions, onSelect, exportTheme }) {
   const rels = useMemo(() => Object.values(relationships), [relationships]);
 
   // ---- Parent links, grouped into a shared drop so a couple's children
@@ -199,7 +199,7 @@ export default function RelationshipLines({ people, relationships, positions, on
             y={midY - 16}
             width={120}
             align="center"
-            fontFamily="Inter"
+            fontFamily={exportTheme?.fontFamily || 'Inter'}
             fontSize={10}
             fill="#5B7C85"
             listening={false}
