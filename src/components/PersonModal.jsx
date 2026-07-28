@@ -36,29 +36,28 @@ function Zone({ eyebrow, first, children }) {
   );
 }
 
-// A pair of choices with "or" between them, as drawn in the design.
+// A pair of choices with "or" between them, as drawn in the design. The
+// whole option is the control — no separate radio circle to render or to
+// get squeezed by flexbox.
 function ChoicePair({ options, value, onChange, name }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2" role="radiogroup" aria-label={name}>
       {options.map((option, i) => (
         <div key={option.id} className="contents">
           {i > 0 && <span className="shrink-0 text-xs text-mist">or</span>}
-          <label
-            className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm transition-colors ${
+          <button
+            type="button"
+            role="radio"
+            aria-checked={value === option.id}
+            onClick={() => onChange(option.id)}
+            className={`flex-1 rounded-xl border px-3 py-2.5 text-sm transition-colors ${
               value === option.id
                 ? 'border-cyan bg-cyan-wash font-medium text-cyan-deep'
                 : 'border-hairline text-ink hover:border-cyan-soft'
             }`}
           >
-            <input
-              type="radio"
-              name={name}
-              checked={value === option.id}
-              onChange={() => onChange(option.id)}
-              className="h-4 w-4 shrink-0 accent-[#0EA5B7]"
-            />
             {option.label}
-          </label>
+          </button>
         </div>
       ))}
     </div>
