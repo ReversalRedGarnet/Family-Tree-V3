@@ -117,3 +117,44 @@ export const SLOT_STEP = CARD_WIDTH + COLUMN_GAP;
 
 // ---- Breakpoint used by the responsive layout ----
 export const MOBILE_BREAKPOINT = 768;
+
+// ---- Export templates ----
+// Purely a presentation choice for the exported PNG/PDF. The editable board
+// itself never uses these — it always renders in the "board" appearance
+// below, which is why that entry's colours mirror what Canvas and
+// PersonNode already use by default.
+//
+// Deliberately leaves relationship-line colours alone even in the darker
+// template: those colours carry meaning (divorced vs. widowed vs. step),
+// and a template is a paper-and-ink choice, not a re-edit of what the lines
+// say.
+export const EXPORT_THEMES = [
+  {
+    id: 'board',
+    label: 'Board',
+    description: 'Exactly how it looks on screen.',
+    background: '#F6FAFB',
+    fontFamily: 'Proxima Nova, proxima-nova, system-ui, sans-serif',
+    memoColor: '#5B7C85',
+    card: {
+      living: { fill: '#FFFFFF', title: '#103A44', sub: '#5B7C85' },
+      gone: { fill: '#EEF3F4', title: '#4A6870', sub: '#7A9299', band: '#7A9299' },
+    },
+  },
+  {
+    id: 'parchment',
+    label: 'Parchment keepsake',
+    description: 'Warm, archival tones and a serif hand — built for printing or framing.',
+    background: '#F1E7D2',
+    fontFamily: 'Georgia, "Times New Roman", serif',
+    memoColor: '#8A7256',
+    card: {
+      living: { fill: '#FBF6EA', title: '#5B4632', sub: '#8A7256' },
+      gone: { fill: '#EFE2C4', title: '#6E5A42', sub: '#9C8768', band: '#B79F78' },
+    },
+  },
+];
+
+export function exportThemeFor(id) {
+  return EXPORT_THEMES.find((t) => t.id === id) || EXPORT_THEMES[0];
+}
