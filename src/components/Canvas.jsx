@@ -62,6 +62,7 @@ const Canvas = forwardRef(function Canvas(
     onRelationshipClick,
     onAddFirstPerson,
     onConflictClick,
+    exportTheme,
   },
   ref
 ) {
@@ -285,7 +286,7 @@ const Canvas = forwardRef(function Canvas(
             y={bounds.minY}
             width={bounds.maxX - bounds.minX}
             height={bounds.maxY - bounds.minY}
-            fill="#F6FAFB"
+            fill={exportTheme?.background || '#F6FAFB'}
             listening={false}
           />
 
@@ -294,6 +295,7 @@ const Canvas = forwardRef(function Canvas(
             relationships={relationships}
             positions={positions}
             onSelect={onRelationshipClick}
+            exportTheme={exportTheme}
           />
 
           {Object.entries(people).map(([id, person]) => (
@@ -315,6 +317,7 @@ const Canvas = forwardRef(function Canvas(
                 onPersonContextMenu(personId, e.evt.clientX, e.evt.clientY);
               }}
               onConflictClick={onConflictClick}
+              exportTheme={exportTheme}
             />
           ))}
 
@@ -323,9 +326,9 @@ const Canvas = forwardRef(function Canvas(
               text={memo}
               x={bounds.minX + 28}
               y={bounds.maxY - 52}
-              fontFamily="Proxima Nova, proxima-nova, system-ui, sans-serif"
+              fontFamily={exportTheme?.fontFamily || 'Proxima Nova, proxima-nova, system-ui, sans-serif'}
               fontSize={17}
-              fill="#5B7C85"
+              fill={exportTheme?.memoColor || '#5B7C85'}
               listening={false}
             />
           )}
