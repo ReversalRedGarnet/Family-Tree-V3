@@ -129,7 +129,7 @@ export default function Sidebar({
         <div>
           <h1 className="font-display text-xl leading-tight text-ink">Family Tree</h1>
           <p className="mt-0.5 text-xs text-mist">
-            Nothing is saved — export before you close the tab.
+            Saved automatically in this browser. Export a copy before switching devices.
           </p>
         </div>
         <Tooltip label={isMobile ? 'Close the panel' : 'Collapse the panel'} placement="bottom">
