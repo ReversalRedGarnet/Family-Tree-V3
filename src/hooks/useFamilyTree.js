@@ -3,6 +3,7 @@ import { COLOR_THEMES, DEFAULT_GENDER, MAX_HISTORY } from '../utils/constants';
 import { computeGenerations } from '../utils/generations';
 import { autoLayout, rowY } from '../utils/layout';
 import { generateId } from '../utils/id';
+import { loadGraph, clearSavedGraph } from '../utils/storage';
 
 const EMPTY_GRAPH = { people: {}, relationships: {} };
 
@@ -26,7 +27,11 @@ function blankPerson(id, data = {}) {
 }
 
 export function useFamilyTree() {
-  const [history, setHistory] = useState({ past: [], present: EMPTY_GRAPH, future: [] });
+  const [history, setHistory] = useState(() => ({
+    past: [],
+    present: loadGraph() || EMPTY_GRAPH,
+    future: [],
+  }));
   const [selectedIds, setSelectedIds] = useState([]);
 
   const graph = history.present;
@@ -217,6 +222,7 @@ export function useFamilyTree() {
   const resetAll = useCallback(() => {
     commit(() => EMPTY_GRAPH);
     setSelectedIds([]);
+    clearSavedGraph();
   }, [commit]);
 
   const undo = useCallback(() => {
