@@ -19,7 +19,8 @@ import {
 } from './utils/validation';
 import { parentsOf, partnersOf } from './utils/generations';
 import { exportAsPng, exportAsPdf } from './utils/exportTree';
-import { MOBILE_BREAKPOINT } from './utils/constants';
+import { saveGraph } from './utils/storage';
+import { MOBILE_BREAKPOINT, exportThemeFor } from './utils/constants';
 
 const CLOSED_MENU = { open: false, x: 0, y: 0, items: [] };
 const CLOSED_PERSON = { open: false, mode: 'add', editingId: null, pending: null };
@@ -40,6 +41,7 @@ export default function App() {
   const [linkModal, setLinkModal] = useState(CLOSED_LINK);
   const [exportModal, setExportModal] = useState({ open: false, busy: false });
   const [exportMemo, setExportMemo] = useState(null);
+  const [activeExportTheme, setActiveExportTheme] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
   const [contextMenu, setContextMenu] = useState(CLOSED_MENU);
 
@@ -53,6 +55,24 @@ export default function App() {
   useEffect(() => {
     setSidebarOpen(!isMobile);
   }, [isMobile]);
+
+  // Persisted to this browser only — no account, no sync elsewhere. Runs on
+  // every structural change (add, delete, link, drag-end, etc.), not on
+  // every keystroke, since those only touch the open form's local state
+  // until Save is pressed. Warns once per session rather than on every
+  // failed write, so a full/disabled storage doesn't spam toasts.
+  const warnedAboutSaveRef = useRef(false);
+  useEffect(() => {
+    const ok = saveGraph({ people, relationships });
+    if (!ok && !warnedAboutSaveRef.current && (Object.keys(people).length || Object.keys(relationships).length)) {
+      warnedAboutSaveRef.current = true;
+      pushToast(
+        "This browser won't let the tree autosave — export before closing the tab to be safe.",
+        'warning',
+        6000
+      );
+    }
+  }, [people, relationships, pushToast]);
 
   const closeMenu = useCallback(() => setContextMenu(CLOSED_MENU), []);
   const nameOf = useCallback(
@@ -335,11 +355,17 @@ export default function App() {
     async (kind, payload) => {
       setExportModal({ open: true, busy: true });
       setExportMemo(payload.memo);
+      // The template only ever exists for this one capture — the modal's
+      // backdrop is covering the board the whole time, so nobody watches
+      // it happen, and it's always put back afterward, success or not.
+      const theme = payload.themeId && payload.themeId !== 'board' ? exportThemeFor(payload.themeId) : null;
+      setActiveExportTheme(theme);
       await nextPaint();
       const result = await (kind === 'pdf' ? exportAsPdf : exportAsPng)(
         stageRef.current,
         payload.fileName
       );
+      setActiveExportTheme(null);
       setExportMemo(null);
       setExportModal({ open: false, busy: false });
       if (!result.ok) pushToast(result.error, 'error');
@@ -351,7 +377,7 @@ export default function App() {
   const requestReset = useCallback(() => {
     setConfirmState({
       title: 'Clear the board?',
-      message: "Everyone and every link goes. Undo still works until you close the tab.",
+      message: "Everyone and every link goes, including the saved copy in this browser. Undo still works until you close the tab.",
       danger: true,
       confirmLabel: 'Clear board',
       onConfirm: () => {
@@ -468,6 +494,7 @@ export default function App() {
           onRelationshipClick={handleRelationshipClick}
           onAddFirstPerson={() => openAddPerson({ kind: 'root' })}
           onConflictClick={handleConflictClick}
+          exportTheme={activeExportTheme}
         />
       </main>
 
