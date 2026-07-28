@@ -106,4 +106,3 @@ export function autoLayout(graph, hint = null) {
 
   return { ...graph, people: packRows(people, generation, hint?.newId ?? null) };
 }
-
