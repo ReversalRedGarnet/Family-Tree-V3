@@ -44,12 +44,18 @@ export default function PersonNode({
   onDblClick,
   onContextMenu,
   onConflictClick,
+  exportTheme, // only ever set during export capture — see App.jsx
 }) {
   const shape = shapeForGender(person.gender);
   const isCircle = shape === 'circle';
   const theme = COLOR_THEMES.find((c) => c.id === person.colorTheme)?.hex || '#0EA5B7';
   const gone = person.living === false;
-  const tone = gone ? GONE : LIVING;
+  // A template restyles the paper and ink, never a person's own chosen
+  // accent colour — that's their distinguishing detail, not the template's.
+  const fontFamily = exportTheme?.fontFamily || FONT;
+  const livingTone = exportTheme?.card?.living || LIVING;
+  const goneTone = exportTheme?.card?.gone || GONE;
+  const tone = gone ? goneTone : livingTone;
 
   const name = `${person.firstName || 'Unnamed'} ${person.lastName || ''}`.trim();
   const lifespan = formatLifespan(person);
@@ -106,7 +112,7 @@ export default function PersonNode({
         y={nameY}
         width={nameWidth}
         align="center"
-        fontFamily={FONT}
+        fontFamily={fontFamily}
         fontStyle="600"
         fontSize={13.5}
         lineHeight={1.15}
@@ -123,7 +129,7 @@ export default function PersonNode({
           y={lifespanY}
           width={lifespanWidth}
           align="center"
-          fontFamily={FONT}
+          fontFamily={fontFamily}
           fontSize={10.5}
           fill={tone.sub}
           listening={false}
@@ -140,7 +146,7 @@ export default function PersonNode({
             y={HALF_H - BAND_HEIGHT}
             width={HALF_W * 2}
             height={BAND_HEIGHT}
-            fill={GONE.band}
+            fill={goneTone.band}
           />
           <Text
             text={lifespan ? `✝  ${lifespan}` : '✝'}
@@ -148,7 +154,7 @@ export default function PersonNode({
             y={HALF_H - BAND_HEIGHT + (isCircle ? 3.5 : 5)}
             width={HALF_W * 2}
             align="center"
-            fontFamily={FONT}
+            fontFamily={fontFamily}
             fontSize={10.5}
             fill="#FFFFFF"
           />
