@@ -157,26 +157,32 @@ export default function App() {
 
       const pending = personModal.pending || {};
 
-      // Whatever opened the form decides how the new person arrives linked,
-      // and which side of their anchor they should try to sit on.
+      // Whatever opened the form decides how the new person arrives linked
+      // and who they want to sit near. It never picks a side: the slot
+      // finder searches outward from the ideal spot and settles ties toward
+      // the centre of the board, so nothing has to guess which side is free.
       let buildLinks = null;
-      let opts = { nearX: pending.x };
+      // Right-click "add a person here" — the user pointed at a spot, so
+      // that spot is the request.
+      let opts = { x: pending.x };
 
       if (pending.kind === 'child' && pending.parentIds?.length) {
         buildLinks = (id) => pending.parentIds.map((parentId) => ({ kind: 'parent', a: parentId, b: id }));
-        opts = { anchorId: pending.anchorId, prefer: ['center', 'right', 'left'] };
+        // Under the middle of its parents — both of them, when there are two.
+        opts = { anchorIds: pending.parentIds };
       } else if (pending.kind === 'parent' && pending.childId) {
         buildLinks = (id) => [{ kind: 'parent', a: id, b: pending.childId }];
-        opts = { anchorId: pending.childId, prefer: ['center', 'right', 'left'] };
+        // Directly above the child.
+        opts = { anchorIds: [pending.childId] };
       } else if (pending.kind === 'sibling' && pending.siblingId) {
         const shared = parentsOf(pending.siblingId, relationships);
         buildLinks = (id) =>
           shared.length
             ? shared.map((parentId) => ({ kind: 'parent', a: parentId, b: id }))
             : [{ kind: 'sibling', a: pending.siblingId, b: id }];
-        // Beside them, on whichever side is free — a spouse already sitting
-        // to the right pushes the sibling to the left, and vice versa.
-        opts = { anchorId: pending.siblingId, prefer: ['right', 'left'] };
+        // Beside them. A spouse already sitting to the right sends the
+        // sibling left, and vice versa, without either side being preferred.
+        opts = { anchorIds: [pending.siblingId] };
       }
 
       tree.addRelative(formData, buildLinks, opts);
@@ -244,6 +250,22 @@ export default function App() {
       pushToast('Linked. The line style shows what kind — see the key in the panel.', 'success', 4000);
     },
     [people, relationships, tree, pushToast, nameOf]
+  );
+
+  // Dropping a card onto a parent line or a couple's line is a shortcut to
+  // the right-click "Add a child" item, and lands in the same place: the
+  // add-person form, pre-linked to those parents. The card that was dragged
+  // is only the gesture — it goes back where it was, and the person it
+  // belongs to is not touched — so the toast says whose child is being
+  // added rather than leaving that to be inferred.
+  const handleDropOnConnector = useCallback(
+    (parentIds) => {
+      const known = parentIds.filter((id) => people[id]);
+      if (!known.length) return;
+      openAddPerson({ kind: 'child', parentIds: known });
+      pushToast(`Adding a child to ${known.map(nameOf).join(' and ')}.`, 'info', 3500);
+    },
+    [people, openAddPerson, pushToast, nameOf]
   );
 
   const handleConflictClick = useCallback(
@@ -314,7 +336,7 @@ export default function App() {
           {
             label: 'Add a child',
             hint: partners.length === 1 ? `Linked to ${nameOf(partners[0])} too.` : undefined,
-            onSelect: () => openAddPerson({ kind: 'child', parentIds, anchorId: id }),
+            onSelect: () => openAddPerson({ kind: 'child', parentIds }),
           },
           {
             label: 'Add a sibling',
@@ -491,6 +513,7 @@ export default function App() {
           onPersonContextMenu={handlePersonMenu}
           onCanvasContextMenu={handleBoardMenu}
           onDropOverlap={(aId, bId) => openLinkModal(aId, bId, 'partner')}
+          onDropOnConnector={handleDropOnConnector}
           onRelationshipClick={handleRelationshipClick}
           onAddFirstPerson={() => openAddPerson({ kind: 'root' })}
           onConflictClick={handleConflictClick}

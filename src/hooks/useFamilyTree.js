@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
-import { COLOR_THEMES, DEFAULT_GENDER, MAX_HISTORY } from '../utils/constants';
+import { COLOR_THEMES, DEFAULT_GENDER, MAX_HISTORY, ORIGIN_X } from '../utils/constants';
 import { computeGenerations } from '../utils/generations';
-import { autoLayout, rowY } from '../utils/layout';
+import { autoLayout, reflowAll, rowY } from '../utils/layout';
 import { generateId } from '../utils/id';
 import { loadGraph, clearSavedGraph } from '../utils/storage';
 
@@ -22,7 +22,10 @@ function blankPerson(id, data = {}) {
     colorTheme: data.colorTheme || COLOR_THEMES[0].id,
     placed: false,
     placedGen: 0,
-    position: { x: 360, y: rowY(0) },
+    // Provisional only: autoLayout runs the slot finder over this card
+    // before it is ever rendered. Starting it on the centre line means an
+    // unanchored card that finds the centre free stays exactly there.
+    position: { x: ORIGIN_X, y: rowY(0) },
   };
 }
 
@@ -102,7 +105,10 @@ export function useFamilyTree() {
             relationships: relationships2,
           };
         },
-        { hint: { newId: id, anchorId: opts.anchorId, prefer: opts.prefer, x: opts.nearX } }
+        // The hint says where the card would LIKE to be — the people it
+        // arrives attached to, or an exact spot the user pointed at. Which
+        // slot it actually gets is the slot finder's call.
+        { hint: { newId: id, anchorIds: opts.anchorIds, x: opts.x } }
       );
 
       return id;
@@ -209,14 +215,11 @@ export function useFamilyTree() {
 
   // ---------- Layout / history ----------
 
+  // The only thing that overrides a hand-drag, and the only thing that
+  // moves cards nobody touched. reflowAll returns a fully positioned graph,
+  // so autoLayout would only be second-guessing it.
   const tidyRows = useCallback(() => {
-    commit((g) => {
-      const people2 = {};
-      Object.entries(g.people).forEach(([id, person]) => {
-        people2[id] = { ...person, placed: false };
-      });
-      return { ...g, people: people2 };
-    });
+    commit((g) => reflowAll(g), { layout: false });
   }, [commit]);
 
   const resetAll = useCallback(() => {

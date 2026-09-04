@@ -85,28 +85,33 @@ src/
   index.css                Tailwind + the corkboard background texture
   App.jsx                  Wires state, modals, context menus, and shortcuts together
   hooks/
-    useFamilyTree.js        People/unions state, undo/redo history, derived generations
+    useFamilyTree.js        People/relationships state, undo/redo history, derived generations
     useToasts.js            Small notification queue for errors/warnings/success
+    useMediaQuery.js        matchMedia wrapper for the drawer-vs-rail decision
   components/
-    Canvas.jsx              Konva stage: pan/zoom, drag-to-connect, right-click menu
-    PersonNode.jsx          One person's pinned card (shape/color/photo/dates)
-    ConnectionLines.jsx      The red "string" between partners and down to children
-    Sidebar.jsx             Person list/search, add/export/undo/reset controls
-    PersonModal.jsx         Add/edit person form (photo upload, warnings, delete)
-    UnionModal.jsx          Confirm a union's type/status after drag-drop or menu
-    ExportModal.jsx         "Whose tree is this?" -> PNG/PDF export
-    ContextMenu.jsx         Generic right-click menu (person or empty canvas)
+    Canvas.jsx              Konva stage: pan/zoom, drag-to-link, right-click menu
+    PersonNode.jsx          One person's card (shape from gender, colour, dates, conflict badge)
+    RelationshipLines.jsx   Every link drawn in the line language below
+    Sidebar.jsx             Person list/search, add/export/undo/reset controls, legend
+    Legend.jsx              The key: the same glyphs RelationshipLines draws
+    PersonModal.jsx         Add/edit person form (warnings, delete)
+    RelationshipModal.jsx   Confirm a link's kind/type/status after drag-drop or menu
+    ExportModal.jsx         "Whose tree is this?" -> theme -> PNG/PDF export
+    ContextMenu.jsx         Generic right-click menu (person, link, or empty canvas)
     ConfirmDialog.jsx       Generic yes/no confirmation (delete, clear board)
+    Modal.jsx               Shared dialog shell: bottom sheet on phones, card on desktop
+    Tooltip.jsx             Portal-rendered hover/focus tooltip, plus the (i) InfoDot
     ToastStack.jsx          Renders queued notifications
     ErrorBoundary.jsx       Catches render crashes with a friendly restart screen
   utils/
-    constants.js            Genders, shapes, colors, union types, layout numbers
+    constants.js            Genders, shapes, colours, relationship types, line styles, layout numbers
     id.js                   UUID generation with a manual fallback
-    generations.js          BFS generation computation + cycle detection
-    validation.js           Blocking rules + non-blocking warnings
+    generations.js          BFS generation computation, cycle detection, sibling-type inference
+    layout.js               The slot lattice: findNearestFreeX, placeCard, autoLayout, reflowAll
+    validation.js           Blocking rules + non-blocking warnings + duplicate detection
     dates.js                Forgiving date parsing for warning checks
+    storage.js              Versioned localStorage autosave for this browser only
     exportTree.js           Composites the memo footer, exports PNG/PDF
-    useHtmlImage.js         Loads an uploaded photo for Konva rendering
 ```
 
 ## How the key interactions work
@@ -117,6 +122,17 @@ src/
   least ~35% of the card area triggers a confirmation popup — the popup
   appears on drop, not mid-drag), or shift-click to select exactly two
   people and right-click -> "Marriage / Partnership…".
+- **Add a child by dropping onto a line**: drag any card onto a
+  parent-child line or a couple's line and let go — the line lights up
+  while you are over it, and the add-person form opens pre-linked to those
+  parents. It is a shortcut to the right-click "Add a child" item and ends
+  in exactly the same place. The card you dragged is only the gesture: it
+  goes straight back where it came from, and the person on it is not
+  changed or linked to anything. Landing on a card is checked first, so a
+  drop that overlaps someone still means "link these two people". A card is
+  never counted as landing on a line it is already an end of, and sibling
+  arches and "something else" links are not drop targets — neither says
+  anything about parentage.
 - **Add Parent / Child / Sibling**: right-click a person's card.
   - *Add Parent* creates two new linked parent cards at once (since a union
     always needs two people) and immediately opens one for editing.
@@ -154,14 +170,55 @@ Two edge cases are handled explicitly rather than left to crash:
   0 instead of freezing the app in an infinite loop. Click the badge and
   it explains what's contradictory, in plain language, as a toast.
 
-Within a row, cards are packed left to right so none of them overlap. The
-comparison is done on a rounded X so that two cards a fraction of a pixel
-apart still count as competing for the same slot — but rounding, rather
-than a tolerance window, because a window isn't transitive (0.0 ties 0.4,
-0.4 ties 0.8, yet 0.0 is clearly left of 0.8) and an intransitive
-comparator lets the sort return a different answer depending on which
-element it happens to pivot on. Ties fall back to the incoming card, then
-to id, so the same tree always lays out the same way.
+## Where a card lands (X position)
+
+Every automatically-placed card sits on one lattice of slots,
+`ORIGIN_X + n * SLOT_STEP`, and exactly one function decides which slot a
+card gets: `findNearestFreeX` in `layout.js`. Adding a person uses it, and
+so does the collision resolver, so there is only ever one answer to "where
+does this card go".
+
+A card first works out where it would *like* to be — the midpoint of both
+its parents, directly above its child, beside its sibling, the spot you
+right-clicked, or the centre line if it has nothing to go on. From that
+slot the lattice is searched **outward**, and a tie at equal distance goes
+to whichever candidate is **nearer the centre line**. That last rule is
+what keeps the board from leaning: a row that has already spread one way
+gets filled back in from the inside rather than extended further out. On a
+dead heat (only possible for a card that wants the centre slot itself) the
+emptier half of the row wins, so repeated additions alternate sides —
+`0, -1, +1, -2, +2`.
+
+Adding a card **never moves anyone already on the board**. The earlier
+build tried three fixed positions beside the anchor, claimed the right-hand
+one whether or not it was free, and left a left-to-right packing sweep to
+shove the current occupant along — and since a sweep only ever pushes
+right, every crowded insertion nudged the whole board a little further
+right, permanently. It also shoved cards you had positioned by hand.
+
+Rows can still collide for reasons that have nothing to do with insertion:
+someone changed generation under them, or a tree saved by an older build is
+being opened. Those are resolved by moving the **lower-priority** card to
+its own nearest free slot. Priority decides who keeps their exact X: the
+card just added (it already searched for a genuinely free slot), then any
+card dragged by hand (you put it there on purpose), then everyone else.
+Within a rank the comparison is done on a rounded X so that two cards a
+fraction of a pixel apart still count as competing for the same slot — but
+rounding, rather than a tolerance window, because a window isn't transitive
+(0.0 ties 0.4, 0.4 ties 0.8, yet 0.0 is clearly left of 0.8) and an
+intransitive comparator lets the sort return a different answer depending
+on which element it happens to pivot on. Ties fall back to id, so the same
+tree always lays out the same way.
+
+Cards moved by hand are never snapped onto the lattice — they are treated
+as obstacles instead, since you put them exactly where you wanted them.
+**Tidy rows** is the one exception, and the only thing that moves cards
+nobody touched: it keeps each row's left-to-right order, closes the gaps
+onto the lattice, and re-centres every row on the centre line. It is also
+how a tree saved by an older build gets onto the lattice, since a loaded
+graph is otherwise left alone until something in it actually collides. A
+row with an even number of cards ends up half a slot off the centre line;
+keeping every card on a whole slot is worth more than centring it exactly.
 
 ## Kinds of siblings
 

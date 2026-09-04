@@ -11,7 +11,13 @@ import { Stage, Layer, Rect, Text } from 'react-konva';
 import PersonNode from './PersonNode';
 import RelationshipLines from './RelationshipLines';
 import Tooltip from './Tooltip';
-import { CARD_WIDTH, CARD_HEIGHT, OVERLAP_THRESHOLD } from '../utils/constants';
+import {
+  CARD_WIDTH,
+  CARD_HEIGHT,
+  OVERLAP_THRESHOLD,
+  LINE_DROP_TOLERANCE,
+} from '../utils/constants';
+import { buildConnectors, findConnectorAt } from '../utils/connectors';
 
 const MIN_SCALE = 0.3;
 const MAX_SCALE = 2.4;
@@ -59,6 +65,7 @@ const Canvas = forwardRef(function Canvas(
     onPersonContextMenu,
     onCanvasContextMenu,
     onDropOverlap,
+    onDropOnConnector,
     onRelationshipClick,
     onAddFirstPerson,
     onConflictClick,
@@ -73,6 +80,7 @@ const Canvas = forwardRef(function Canvas(
   const [size, setSize] = useState({ width: 1000, height: 700 });
   const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
   const [hoverTargetId, setHoverTargetId] = useState(null);
+  const [hoverConnectorKey, setHoverConnectorKey] = useState(null);
 
   useImperativeHandle(ref, () => stageRef.current, []);
 
@@ -187,6 +195,13 @@ const Canvas = forwardRef(function Canvas(
 
   // ---- Drag to connect ----
 
+  // The same geometry RelationshipLines draws from, so a card lands on
+  // exactly the line the user can see.
+  const connectors = useMemo(
+    () => buildConnectors(relationships, positions),
+    [relationships, positions]
+  );
+
   const findOverlapTarget = useCallback(
     (draggedId, x, y) => {
       let best = null;
@@ -204,30 +219,58 @@ const Canvas = forwardRef(function Canvas(
     [people]
   );
 
+  // A drop is read as one thing or the other, never both. Landing on a card
+  // is the more specific gesture, so it is asked first: two people
+  // overlapping means a link between those two, and only a drop that isn't
+  // on anybody is offered to the lines.
+  const findDropTarget = useCallback(
+    (draggedId, x, y) => {
+      const personId = findOverlapTarget(draggedId, x, y);
+      if (personId) return { kind: 'person', personId };
+      const connector = findConnectorAt(connectors, x, y, LINE_DROP_TOLERANCE, draggedId);
+      if (connector) return { kind: 'connector', connector };
+      return null;
+    },
+    [findOverlapTarget, connectors]
+  );
+
   const handleDragMove = useCallback(
     (personId, x, y) => {
-      const target = findOverlapTarget(personId, x, y);
-      setHoverTargetId((prev) => (prev === target ? prev : target));
+      const drop = findDropTarget(personId, x, y);
+      const nextPerson = drop?.kind === 'person' ? drop.personId : null;
+      const nextConnector = drop?.kind === 'connector' ? drop.connector.key : null;
+      setHoverTargetId((prev) => (prev === nextPerson ? prev : nextPerson));
+      setHoverConnectorKey((prev) => (prev === nextConnector ? prev : nextConnector));
     },
-    [findOverlapTarget]
+    [findDropTarget]
   );
 
   const handleDragEnd = useCallback(
     (personId, x, y, node) => {
       setHoverTargetId(null);
-      const target = findOverlapTarget(personId, x, y);
-      if (target) {
+      setHoverConnectorKey(null);
+
+      const drop = findDropTarget(personId, x, y);
+
+      // Both drop gestures are questions, not moves: the card goes back
+      // where it came from and a dialog opens. Putting it back here rather
+      // than waiting for a re-render means it never flickers at the drop
+      // point, and — since nothing is committed — the board is left exactly
+      // as it was if the dialog is cancelled.
+      if (drop) {
         const origin = people[personId]?.position;
         if (origin && node) {
           node.position({ x: origin.x, y: origin.y });
           node.getLayer()?.batchDraw();
         }
-        onDropOverlap(personId, target);
+        if (drop.kind === 'person') onDropOverlap(personId, drop.personId);
+        else onDropOnConnector?.(drop.connector.parentIds, personId);
         return;
       }
+
       onMovePerson(personId, x, y);
     },
-    [findOverlapTarget, people, onDropOverlap, onMovePerson]
+    [findDropTarget, people, onDropOverlap, onDropOnConnector, onMovePerson]
   );
 
   // ---- Stage-level events ----
@@ -291,10 +334,10 @@ const Canvas = forwardRef(function Canvas(
           />
 
           <RelationshipLines
-            people={people}
             relationships={relationships}
             positions={positions}
             onSelect={onRelationshipClick}
+            highlightKey={hoverConnectorKey}
             exportTheme={exportTheme}
           />
 

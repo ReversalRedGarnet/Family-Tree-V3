@@ -109,11 +109,31 @@ export const CARD_HEIGHT = 92;
 export const TOP_MARGIN = 120;
 export const COLUMN_GAP = 44;
 export const OVERLAP_THRESHOLD = 0.3;
+
+// How close a dropped card's centre has to be to a line before the drop
+// counts as landing ON it. Kept tight, and only ever consulted after the
+// card-overlap test has already said no, so dropping someone next to a
+// couple still reads as a link between two people rather than a new child.
+// The lines being aimed at run through the gap between two rows, which is
+// ROW_HEIGHT - CARD_HEIGHT clear of any card.
+export const LINE_DROP_TOLERANCE = 26;
 export const MAX_HISTORY = 50;
 
 // Horizontal distance between the centres of two neighbouring cards. Also
 // the step used when hunting for a free slot beside an existing person.
 export const SLOT_STEP = CARD_WIDTH + COLUMN_GAP;
+
+// The board's centre line. Every automatically-placed card sits on the
+// lattice ORIGIN_X + n * SLOT_STEP, and the slot finder settles ties in
+// favour of whichever candidate is nearer this line — which is what keeps
+// the board from leaning one way as it grows. Cards dragged by hand are
+// deliberately left off the lattice: the user put them exactly there.
+export const ORIGIN_X = 360;
+
+// Two cards are competing for the same space when their centres are closer
+// than this. A pixel under SLOT_STEP, so a card sitting exactly one step
+// away still reads as clear despite floating-point drift.
+export const MIN_SLOT_GAP = SLOT_STEP - 1;
 
 // ---- Breakpoint used by the responsive layout ----
 export const MOBILE_BREAKPOINT = 768;
