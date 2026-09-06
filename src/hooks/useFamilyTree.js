@@ -177,6 +177,33 @@ export function useFamilyTree() {
     [commit]
   );
 
+  // Links an EXISTING person to one or two parents in one step — the
+  // drag-a-card-onto-a-parent-line gesture. Kept separate from
+  // addRelationship (which only ever writes one link) for the same reason
+  // addRelative bundles a new person's links into one commit: adopting into
+  // a couple with two parents should be one undo, not two.
+  const addParentLinks = useCallback(
+    (childId, parentIds) => {
+      const prepared = (parentIds || [])
+        .filter((parentId) => parentId && parentId !== childId)
+        .map((parentId) => ({ id: generateId('rel'), kind: 'parent', a: parentId, b: childId }));
+      if (!prepared.length) return [];
+
+      commit((g) => {
+        if (!g.people[childId]) return g;
+        const relationships2 = { ...g.relationships };
+        prepared.forEach((rel) => {
+          if (!g.people[rel.a]) return;
+          relationships2[rel.id] = rel;
+        });
+        return { ...g, relationships: relationships2 };
+      });
+
+      return prepared.map((rel) => rel.id);
+    },
+    [commit]
+  );
+
   const deleteRelationship = useCallback(
     (id) => {
       commit((g) => {
@@ -264,6 +291,7 @@ export function useFamilyTree() {
     deletePerson,
     movePerson,
     addRelationship,
+    addParentLinks,
     addPartnerWithLoss,
     deleteRelationship,
     tidyRows,

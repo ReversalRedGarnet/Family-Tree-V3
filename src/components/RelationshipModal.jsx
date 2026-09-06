@@ -251,7 +251,7 @@ export default function RelationshipModal({
 
         {kind === 'parent' && (
           <label className="block">
-            <Label hint="Step, adoptive and foster links draw as a softer dashed line.">Kind of parent</Label>
+            <Label hint="Anything other than a birth parent draws as a softer dashed line.">Kind of parent</Label>
             <select value={parentType} onChange={(e) => setParentType(e.target.value)} className={field}>
               {PARENT_TYPES.map((t) => (
                 <option key={t.id} value={t.id}>{t.label}</option>

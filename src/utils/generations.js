@@ -117,6 +117,23 @@ export function partnersOf(personId, relationships) {
     .map((rel) => (rel.a === personId ? rel.b : rel.a));
 }
 
+// Partners still current — status is 'together' or unset. Separated,
+// divorced and widowed are all left out here, not because the link ended
+// (separated hasn't), but because none of the three is a safe partner to
+// *assume* someone still shares. Used wherever "the" partner matters for
+// auto-linking someone new, e.g. a child only gets both parents
+// auto-attached when there's exactly one of these.
+export function activePartnersOf(personId, relationships) {
+  return Object.values(relationships)
+    .filter(
+      (rel) =>
+        rel.kind === 'partner' &&
+        (rel.a === personId || rel.b === personId) &&
+        (!rel.status || rel.status === 'together')
+    )
+    .map((rel) => (rel.a === personId ? rel.b : rel.a));
+}
+
 // Works out what kind of siblings two people are from the parents already on
 // the board, so the user isn't re-deriving it by hand every time.
 //

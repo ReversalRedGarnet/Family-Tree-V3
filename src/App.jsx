@@ -17,7 +17,7 @@ import {
   collectTreeWarnings,
   findDuplicatePerson,
 } from './utils/validation';
-import { parentsOf, partnersOf } from './utils/generations';
+import { parentsOf, activePartnersOf } from './utils/generations';
 import { exportAsPng, exportAsPdf } from './utils/exportTree';
 import { saveGraph } from './utils/storage';
 import { MOBILE_BREAKPOINT, exportThemeFor } from './utils/constants';
@@ -252,20 +252,48 @@ export default function App() {
     [people, relationships, tree, pushToast, nameOf]
   );
 
-  // Dropping a card onto a parent line or a couple's line is a shortcut to
-  // the right-click "Add a child" item, and lands in the same place: the
-  // add-person form, pre-linked to those parents. The card that was dragged
-  // is only the gesture — it goes back where it was, and the person it
-  // belongs to is not touched — so the toast says whose child is being
-  // added rather than leaving that to be inferred.
+  // Dropping a card onto a parent line or a couple's line adopts the person
+  // being dragged into that pair — the dragged card is not a gesture that
+  // spawns someone new, it names who the new child actually is. The card
+  // still snaps straight back to where it was (nothing is a "move" here),
+  // and nothing is written until the confirmation below is accepted — the
+  // same rule every other drag-based link on the board follows (dropping
+  // one card onto another opens the same kind of confirmation rather than
+  // linking instantly).
   const handleDropOnConnector = useCallback(
-    (parentIds) => {
+    (parentIds, draggedId) => {
       const known = parentIds.filter((id) => people[id]);
-      if (!known.length) return;
-      openAddPerson({ kind: 'child', parentIds: known });
-      pushToast(`Adding a child to ${known.map(nameOf).join(' and ')}.`, 'info', 3500);
+      if (!known.length || !people[draggedId]) return;
+
+      const checks = known.map((parentId) => ({
+        parentId,
+        check: validateRelationship('parent', parentId, draggedId, people, relationships),
+      }));
+      const linkable = checks.filter((c) => c.check.ok).map((c) => c.parentId);
+      const blocked = checks.filter((c) => !c.check.ok);
+
+      if (!linkable.length) {
+        pushToast(blocked[0]?.check.error || "That link can't be made.", 'warning', 4500);
+        return;
+      }
+
+      const parentNames = linkable.map(nameOf).join(' and ');
+      setConfirmState({
+        title: `Make ${nameOf(draggedId)} a child of ${parentNames}?`,
+        message: blocked.length
+          ? `${nameOf(draggedId)} already has a recorded link to ${blocked
+              .map((b) => nameOf(b.parentId))
+              .join(' and ')}, so only the new link below will be added.\n\nThis adds a parent-and-child link. Generation and row position update to match.`
+          : 'This adds a parent-and-child link. Generation and row position update to match.',
+        confirmLabel: 'Add link',
+        onConfirm: () => {
+          tree.addParentLinks(draggedId, linkable);
+          setConfirmState(null);
+          pushToast(`${nameOf(draggedId)} is now ${parentNames}'s child.`, 'success', 3500);
+        },
+      });
     },
-    [people, openAddPerson, pushToast, nameOf]
+    [people, relationships, tree, pushToast, nameOf]
   );
 
   const handleConflictClick = useCallback(
@@ -313,9 +341,10 @@ export default function App() {
       const partner = selectedIds.find((sid) => sid !== id);
 
       // A child gets both parents automatically if there's exactly one
-      // partner — helpful, but never required.
-      const partners = partnersOf(id, relationships);
-      const parentIds = partners.length === 1 ? [id, partners[0]] : [id];
+      // CURRENT partner — helpful, but never required, and never assumed
+      // onto an ex just because they're still on the board somewhere.
+      const activePartners = activePartnersOf(id, relationships);
+      const parentIds = activePartners.length === 1 ? [id, activePartners[0]] : [id];
 
       setContextMenu({
         open: true,
@@ -335,7 +364,7 @@ export default function App() {
           },
           {
             label: 'Add a child',
-            hint: partners.length === 1 ? `Linked to ${nameOf(partners[0])} too.` : undefined,
+            hint: activePartners.length === 1 ? `Linked to ${nameOf(activePartners[0])} too.` : undefined,
             onSelect: () => openAddPerson({ kind: 'child', parentIds }),
           },
           {

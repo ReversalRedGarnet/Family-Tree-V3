@@ -14,9 +14,10 @@ The sidebar carries a key showing the same glyphs.
 Relationships are deliberately unconstrained: siblings don't need a parent on
 the board, children don't need a couple, and any two people can be linked
 without setting anything else up first. Generation rows are computed from
-whatever links exist. New cards are placed beside whoever they're related to,
-on whichever side has room, and existing cards shuffle right to make space.
-Cards you drag are left exactly where you put them.
+whatever links exist. New cards settle into the nearest free slot to
+whoever they're related to, without moving anyone already on the board (see
+"Where a card lands" below). Cards you drag are left exactly where you put
+them.
 
 ## Typeface
 
@@ -107,6 +108,7 @@ src/
     constants.js            Genders, shapes, colours, relationship types, line styles, layout numbers
     id.js                   UUID generation with a manual fallback
     generations.js          BFS generation computation, cycle detection, sibling-type inference
+    connectors.js           Line geometry shared by RelationshipLines and the drop hit-test
     layout.js               The slot lattice: findNearestFreeX, placeCard, autoLayout, reflowAll
     validation.js           Blocking rules + non-blocking warnings + duplicate detection
     dates.js                Forgiving date parsing for warning checks
@@ -118,44 +120,56 @@ src/
 
 - **Add a person**: sidebar "+ Add person" button, or right-click empty
   canvas -> "Add person here".
-- **Form a union**: drag one person's card onto another's (an overlap of at
-  least ~35% of the card area triggers a confirmation popup — the popup
+- **Link two people**: drag one person's card onto another's (an overlap of
+  at least ~35% of the card area triggers a confirmation popup — the popup
   appears on drop, not mid-drag), or shift-click to select exactly two
-  people and right-click -> "Marriage / Partnership…".
-- **Add a child by dropping onto a line**: drag any card onto a
-  parent-child line or a couple's line and let go — the line lights up
-  while you are over it, and the add-person form opens pre-linked to those
-  parents. It is a shortcut to the right-click "Add a child" item and ends
-  in exactly the same place. The card you dragged is only the gesture: it
-  goes straight back where it came from, and the person on it is not
-  changed or linked to anything. Landing on a card is checked first, so a
-  drop that overlaps someone still means "link these two people". A card is
-  never counted as landing on a line it is already an end of, and sibling
-  arches and "something else" links are not drop targets — neither says
-  anything about parentage.
+  people and right-click -> "Link to {name}…". Either way the same dialog
+  opens — "How are they related?" — and nothing is written until it's
+  confirmed.
+- **Adopt a card as a child by dropping it onto a line**: drag any card onto
+  a parent-child line or a couple's line and let go — the line lights up
+  while you are over it. This does not spawn a new person: the card you
+  dragged is who the new child is. It snaps straight back to where it was
+  (dropping is a question, not a move), and a confirmation dialog names the
+  parents and the person before anything is written — the same "nothing
+  commits until you say so" rule the card-on-card drop above follows.
+  Landing on a card is checked first, so a drop that overlaps someone still
+  means "link these two people". A card is never counted as landing on a
+  line it is already an end of, and sibling arches and "something else"
+  links are not drop targets — neither says anything about parentage. If
+  the drop would make someone their own ancestor, or the two are already
+  linked that way, it's refused with a plain-language reason instead.
 - **Add Parent / Child / Sibling**: right-click a person's card.
-  - *Add Parent* creates two new linked parent cards at once (since a union
-    always needs two people) and immediately opens one for editing.
-  - *Add Child* needs the person to already be in a union first.
-  - *Add Sibling* needs the person to already have listed parents.
+  - *Add Parent* adds one new parent above them and opens it for editing —
+    no second parent required. A relationship link never needs two people
+    to exist; add a partner for that new parent afterwards if there is one.
+  - *Add Child* adds a new child below them. If they have exactly one
+    *current* partner (status "together", or no status set — an ex is
+    never assumed), the child is linked to both parents at once; otherwise
+    just to this one.
+  - *Add Sibling* works whether or not the person has listed parents yet —
+    with none on record it becomes a plain sibling link; the "kind of
+    sibling" field only pre-fills once there's enough on the board to
+    infer it, and can always be overridden.
   - Each of these guards against the mistakes described below rather than
     silently doing nothing.
 - **Select / edit / move**: single click selects, double click edits,
   shift-click multi-selects, drag moves a card left/right within its row.
 - **Undo / redo**: sidebar buttons, or Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (or
   Ctrl+Y). Selection changes alone aren't tracked, so undo always reverts an
-  actual structural change.
+  actual structural change. Adopting a dragged card into one or two parents
+  is one undo step, not one per parent.
 - **Delete**: right-click -> Delete, the Delete/Backspace key with someone
   selected, or the delete link inside the edit form. You'll always see
-  exactly what it affects (unions removed, children who'll lose that parent
-  link) before confirming.
+  exactly what it affects (relationships removed, children who'll lose that
+  parent link) before confirming.
 - **Export**: sidebar "Export tree…" -> name prompt -> PNG or PDF. The name
   is stamped as a memo footer: `Family tree of {name} — generated {date}`.
 
 ## Generations (computed, not typed in)
 
-Row position (the Y axis) is always derived by walking the parent/union
-graph — a person's generation is one below their parent union's generation,
+Row position (the Y axis) is always derived by walking the parent/relationship
+graph — a person's generation is one below their parent's generation,
 and it's recomputed from scratch after every change, so it can never get out
 of sync. Manually dragging a card only ever moves it left/right within its
 own row.
@@ -220,6 +234,17 @@ graph is otherwise left alone until something in it actually collides. A
 row with an even number of cards ends up half a slot off the centre line;
 keeping every card on a whole slot is worth more than centring it exactly.
 
+## Kinds of parents
+
+Six parent types are recorded on a parent link: birth, adoptive, step,
+foster, guardian, and ward (a legal-guardian link, drawn the same direction
+as any other parent link — the guardian is `a`, their ward is `b`). Only
+birth draws as a solid line; every other type draws the same softer dashed
+line and carries the same generic "Non-birth parent" label in the key,
+rather than naming a subset — a fixed list of names here is exactly what
+went stale the last time a parent type was added, so the line style and the
+label both key off "is this birth?" instead.
+
 ## Kinds of siblings
 
 Full, half and step are recorded on the sibling link, but the form fills
@@ -239,9 +264,11 @@ labelling that "half" would be inventing a fact about someone's family.
 - **Self-marriage / self-parenting** and **circular parentage** are blocked
   before they're ever written to state, with a specific, human-readable
   reason shown as a toast.
-- **Duplicate active unions** between the same two people are blocked
-  (remarriage after a divorce/widowhood is still allowed — that's a new
-  union, not a duplicate).
+- **Duplicate active partnerships** between the same two people are blocked
+  — but only while the existing one hasn't ended. A divorced or widowed
+  partnership doesn't block a new one between that same pair: that's a
+  remarriage, a new chapter in their history, not a duplicate of the old
+  record, and both stay on the board side by side.
 - **Duplicate people** are caught before they land: saving someone whose
   name, gender and year of birth all match a card already on the board
   raises "You already added this person" and asks before continuing. It's
@@ -249,10 +276,10 @@ labelling that "half" would be inventing a fact about someone's family.
   the form stays open behind it so the details can be corrected instead of
   retyped. A different year of birth is never treated as a duplicate,
   since a grandparent and grandchild sharing a name is ordinary.
-- **Deleting a person** shows exactly what will be affected first (unions
-  removed, children who'll lose that parent link) rather than a generic
-  "are you sure?". Deleting never leaves a dangling reference to a person
-  or union that no longer exists.
+- **Deleting a person** shows exactly what will be affected first
+  (relationships removed, children who'll lose that parent link) rather
+  than a generic "are you sure?". Deleting never leaves a dangling
+  reference to a person or relationship that no longer exists.
 - **Dates** are treated as free text and never block a save — implausible
   or inconsistent dates (death before birth, a parent younger than their
   child, marked "living" with a death date, etc.) show as inline warnings
@@ -278,9 +305,11 @@ Matching the trimmed-down spec, these are intentionally out of scope:
 accounts/auth/collaboration, GEDCOM/CSV/XML import, and any export beyond
 PNG/PDF. A few smaller simplifications worth knowing about:
 
-- "Add Child" attaches to the person's active (`together`) union if they
-  have one, otherwise their first listed union — there's no picker yet for
-  choosing between multiple past marriages.
+- "Add Child" attaches to a person's one *current* partner (status
+  "together", or no status recorded) if there's exactly one — an ex is
+  never assumed onto a new child. With more than one current partner, or
+  none, the child is linked to just this parent; there's no picker yet for
+  choosing among several.
 - The corkboard texture is a fixed CSS background rather than something
   that pans/zooms with the board itself.
 
@@ -297,6 +326,24 @@ your browser data, or view it on another device.
 If `localStorage` is unavailable or full, saving fails quietly rather than
 interrupting anything — a single toast warns once per session so it isn't
 repeated on every edit.
+
+## Looking ahead: optional Drive-based sync
+
+Under consideration, not yet built: an optional sign-in that saves to the
+user's own Google Drive (`drive.appdata` scope — a hidden per-app folder,
+never the user's visible Drive), as an alternative to today's guest/local-only
+mode rather than a replacement for it. The appeal is that it keeps the app
+backend-free: no server of ours ever holds anyone's family data, so there's
+nothing here for us to secure or be liable for beyond what Google already
+secures for the user's own account. A Firebase-backed version was also
+weighed — its offline-sync engine solves multi-device conflicts far more
+neatly — but it would mean administering a project of our own (security
+rules, a billing surface) rather than storing nothing at all, which is the
+whole point of this app's spec. If this gets built, the real design
+questions are token refresh on a static page with no server to help, what
+happens when the same tree is edited on two devices before either goes back
+online, and how a guest-mode tree gets offered up for migration the first
+time someone signs in.
 
 ## Export templates
 

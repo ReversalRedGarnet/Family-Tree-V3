@@ -16,9 +16,16 @@ export function validateRelationship(kind, aId, bId, people, relationships) {
 
   const existing = Object.values(relationships).find((rel) => {
     if (rel.kind !== kind) return false;
-    return kind === 'parent'
-      ? rel.a === aId && rel.b === bId
-      : unordered(rel, aId, bId);
+    if (kind === 'parent') return rel.a === aId && rel.b === bId;
+    if (kind === 'partner') {
+      // A concluded partnership doesn't block a fresh one between the same
+      // two people — that's a remarriage, a new chapter in their history,
+      // not a duplicate of the old one. Only an unconcluded link (together
+      // or separated — nothing has actually ended yet) counts as the
+      // duplicate.
+      return unordered(rel, aId, bId) && rel.status !== 'divorced' && rel.status !== 'widowed';
+    }
+    return unordered(rel, aId, bId);
   });
   if (existing) {
     return { ok: false, error: 'These two already have that link.' };

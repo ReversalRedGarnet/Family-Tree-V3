@@ -97,7 +97,13 @@ export const LINE_STYLES = {
   divorced:   { color: '#7A9299', width: 2,   dash: [4, 6],   marker: 'break',       label: 'Divorced' },
   widowed:    { color: '#7A9299', width: 2.5, dash: null,     marker: 'none',        label: 'Widowed' },
   parent:     { color: '#0EA5B7', width: 2,   dash: null,     marker: 'none',        label: 'Parent and child' },
-  parentSoft: { color: '#7FD3DD', width: 2,   dash: [6, 4],   marker: 'none',        label: 'Step / adoptive' },
+  // Covers every PARENT_TYPES entry except 'birth' — step, adoptive, foster,
+  // guardian and ward alike. Named generically on purpose: a fixed list here
+  // ("Step / adoptive") drifted out of sync with PARENT_TYPES once foster,
+  // guardian and ward were added, and would drift again the next time a
+  // type is. One label, derived from the same rule the line style itself
+  // uses (constants.js's `soft` check: type !== 'birth'), can't drift.
+  parentSoft: { color: '#7FD3DD', width: 2,   dash: [6, 4],   marker: 'none',        label: 'Non-birth parent' },
   sibling:    { color: '#7A9299', width: 2,   dash: [2, 5],   marker: 'none',        label: 'Siblings' },
   other:      { color: '#A8BEC4', width: 1.75, dash: [1, 5],  marker: 'none',        label: 'Other link' },
 };
