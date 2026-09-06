@@ -125,6 +125,15 @@ export const OVERLAP_THRESHOLD = 0.3;
 export const LINE_DROP_TOLERANCE = 26;
 export const MAX_HISTORY = 50;
 
+// A touch drag gets a more forgiving target than a mouse one, on both kinds
+// of drop. Two reasons, not one: a fingertip is simply wider than a cursor
+// tip, and — unlike a cursor, which sits beside what it's pointing at — a
+// finger sits directly on top of the very highlight meant to confirm the
+// hit, so the feedback that would otherwise let you correct a near-miss is
+// hidden by the thing making it.
+export const TOUCH_LINE_DROP_TOLERANCE = 40;
+export const TOUCH_OVERLAP_THRESHOLD = 0.22;
+
 // Horizontal distance between the centres of two neighbouring cards. Also
 // the step used when hunting for a free slot beside an existing person.
 export const SLOT_STEP = CARD_WIDTH + COLUMN_GAP;

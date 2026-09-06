@@ -38,6 +38,7 @@ export default function PersonNode({
   selected,
   highlighted,
   conflicted,
+  onDragStart,
   onDragMove,
   onDragEnd,
   onClick,
@@ -84,6 +85,7 @@ export default function PersonNode({
       x={x}
       y={y}
       draggable
+      onDragStart={(e) => onDragStart?.(person.id, e)}
       onDragMove={(e) => onDragMove(person.id, e.target.x(), e.target.y())}
       onDragEnd={(e) => onDragEnd(person.id, e.target.x(), e.target.y(), e.target)}
       onClick={(e) => onClick(person.id, e)}

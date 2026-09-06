@@ -16,12 +16,32 @@ import {
   CARD_HEIGHT,
   OVERLAP_THRESHOLD,
   LINE_DROP_TOLERANCE,
+  TOUCH_LINE_DROP_TOLERANCE,
+  TOUCH_OVERLAP_THRESHOLD,
 } from '../utils/constants';
 import { buildConnectors, findConnectorAt } from '../utils/connectors';
 
 const MIN_SCALE = 0.3;
 const MAX_SCALE = 2.4;
 const PAD = 140;
+
+// A touch-originated drag needs the wider, touch-tuned tolerances; a
+// mouse-originated one keeps the tighter mouse ones. Checked once, at the
+// moment a drag actually starts — not per pointer-move — since Konva
+// occasionally reports a mouse-shaped event mid-touch-drag on some
+// browsers, and re-checking every move could flip a single gesture between
+// the two rule sets partway through.
+function isTouchEvent(nativeEvt) {
+  if (!nativeEvt) return false;
+  if (nativeEvt.pointerType) return nativeEvt.pointerType === 'touch' || nativeEvt.pointerType === 'pen';
+  return typeof nativeEvt.type === 'string' && nativeEvt.type.startsWith('touch');
+}
+
+function nameOf(people, id) {
+  const p = people[id];
+  if (!p) return null;
+  return `${p.firstName} ${p.lastName}`.trim() || 'Unnamed';
+}
 
 function overlapFraction(ax, ay, bx, by) {
   const ox =
@@ -81,6 +101,7 @@ const Canvas = forwardRef(function Canvas(
   const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
   const [hoverTargetId, setHoverTargetId] = useState(null);
   const [hoverConnectorKey, setHoverConnectorKey] = useState(null);
+  const [touchDrag, setTouchDrag] = useState(false);
 
   useImperativeHandle(ref, () => stageRef.current, []);
 
@@ -205,7 +226,7 @@ const Canvas = forwardRef(function Canvas(
   const findOverlapTarget = useCallback(
     (draggedId, x, y) => {
       let best = null;
-      let bestScore = OVERLAP_THRESHOLD;
+      let bestScore = touchDrag ? TOUCH_OVERLAP_THRESHOLD : OVERLAP_THRESHOLD;
       Object.entries(people).forEach(([id, other]) => {
         if (id === draggedId) return;
         const score = overlapFraction(x, y, other.position?.x ?? 0, other.position?.y ?? 0);
@@ -216,7 +237,7 @@ const Canvas = forwardRef(function Canvas(
       });
       return best;
     },
-    [people]
+    [people, touchDrag]
   );
 
   // A drop is read as one thing or the other, never both. Landing on a card
@@ -227,12 +248,17 @@ const Canvas = forwardRef(function Canvas(
     (draggedId, x, y) => {
       const personId = findOverlapTarget(draggedId, x, y);
       if (personId) return { kind: 'person', personId };
-      const connector = findConnectorAt(connectors, x, y, LINE_DROP_TOLERANCE, draggedId);
+      const tolerance = touchDrag ? TOUCH_LINE_DROP_TOLERANCE : LINE_DROP_TOLERANCE;
+      const connector = findConnectorAt(connectors, x, y, tolerance, draggedId);
       if (connector) return { kind: 'connector', connector };
       return null;
     },
-    [findOverlapTarget, connectors]
+    [findOverlapTarget, connectors, touchDrag]
   );
+
+  const handleDragStart = useCallback((personId, e) => {
+    setTouchDrag(isTouchEvent(e?.evt));
+  }, []);
 
   const handleDragMove = useCallback(
     (personId, x, y) => {
@@ -249,6 +275,7 @@ const Canvas = forwardRef(function Canvas(
     (personId, x, y, node) => {
       setHoverTargetId(null);
       setHoverConnectorKey(null);
+      setTouchDrag(false);
 
       const drop = findDropTarget(personId, x, y);
 
@@ -303,6 +330,25 @@ const Canvas = forwardRef(function Canvas(
 
   const isEmpty = Object.keys(people).length === 0;
 
+  // The whole point of this banner: on a touch drag, the finger sits right
+  // on top of the highlight that would otherwise say what's about to
+  // happen. A fixed-position line of text, safely away from wherever the
+  // thumb actually is, says it in words instead — reusing the exact same
+  // hover state the highlight itself is drawn from, so the two can never
+  // disagree about what's currently under the card.
+  const dropHint = useMemo(() => {
+    if (!touchDrag) return null;
+    if (hoverTargetId) {
+      return `Drop to link with ${nameOf(people, hoverTargetId) || 'this person'}`;
+    }
+    if (hoverConnectorKey) {
+      const connector = connectors.find((c) => c.key === hoverConnectorKey);
+      const names = (connector?.parentIds || []).map((id) => nameOf(people, id)).filter(Boolean);
+      return names.length ? `Drop to add a child of ${names.join(' and ')}` : 'Drop to add a child here';
+    }
+    return 'Drag onto a person or a line to link them';
+  }, [touchDrag, hoverTargetId, hoverConnectorKey, people, connectors]);
+
   return (
     <div ref={containerRef} className="board-surface relative h-full w-full touch-none overflow-hidden">
       <Stage
@@ -350,6 +396,7 @@ const Canvas = forwardRef(function Canvas(
               selected={selectedIds.includes(id)}
               highlighted={hoverTargetId === id}
               conflicted={Boolean(conflicts?.has?.(id))}
+              onDragStart={handleDragStart}
               onDragMove={handleDragMove}
               onDragEnd={handleDragEnd}
               onClick={(personId, e) => onSelect(personId, e.evt.shiftKey || e.evt.metaKey)}
@@ -377,6 +424,16 @@ const Canvas = forwardRef(function Canvas(
           )}
         </Layer>
       </Stage>
+
+      {/* Touch-drag only: says in words what the hover highlight can't,
+          because the finger doing the dragging is sitting right on top of
+          it. Fixed at the top, out of the way of wherever the thumb
+          actually is, and never intercepts a touch itself. */}
+      {dropHint && (
+        <div className="pointer-events-none absolute left-1/2 top-3 z-10 max-w-[88%] -translate-x-1/2 rounded-xl border border-hairline bg-white/95 px-3.5 py-2 text-center text-xs font-medium text-ink shadow-card backdrop-blur">
+          {dropHint}
+        </div>
+      )}
 
       {isEmpty && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">

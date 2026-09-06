@@ -139,6 +139,11 @@ src/
   links are not drop targets — neither says anything about parentage. If
   the drop would make someone their own ancestor, or the two are already
   linked that way, it's refused with a plain-language reason instead.
+  On a touch drag specifically, both of the drop gestures above get a wider
+  hit zone than a mouse drag does, and a banner across the top of the board
+  says in words what's currently under the card — a finger sits right on
+  top of the highlight that would otherwise show it, so the highlight alone
+  isn't enough to confirm a hit the way it is with a cursor.
 - **Add Parent / Child / Sibling**: right-click a person's card.
   - *Add Parent* adds one new parent above them and opens it for editing —
     no second parent required. A relationship link never needs two people
