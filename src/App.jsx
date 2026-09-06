@@ -455,6 +455,19 @@ export default function App() {
       }
       if (typing) return;
 
+      // A modal holds an in-progress choice about specific people — the
+      // selected two people stay selected behind the link dialog, for
+      // instance, so Backspace with focus on a <select> (not "typing" by
+      // the check above) would otherwise delete exactly who the dialog is
+      // about to link. Undo/redo rewriting the board underneath an open
+      // form is the same shape of surprise: it can remove someone the form
+      // still references, and the form has no way to know. All three are
+      // blocked outright while any of these is open, not only while a text
+      // field has focus.
+      const modalOpen =
+        personModal.open || linkModal.open || Boolean(confirmState) || exportModal.open;
+      if (modalOpen) return;
+
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         e.preventDefault();
@@ -469,7 +482,16 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [tree, selectedIds, requestDeleteSelected, closeMenu]);
+  }, [
+    tree,
+    selectedIds,
+    requestDeleteSelected,
+    closeMenu,
+    personModal.open,
+    linkModal.open,
+    confirmState,
+    exportModal.open,
+  ]);
 
   const sidebar = (
     <Sidebar

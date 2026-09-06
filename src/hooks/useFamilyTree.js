@@ -245,8 +245,31 @@ export function useFamilyTree() {
   // The only thing that overrides a hand-drag, and the only thing that
   // moves cards nobody touched. reflowAll returns a fully positioned graph,
   // so autoLayout would only be second-guessing it.
+  //
+  // reflowAll always hands back a fresh object — that's what "fully
+  // positioned" means, not "changed" — so commit's own reference check
+  // can't tell a real re-tidy from a no-op one. Checked here instead: if
+  // the tree is already tidy, this is a no-op and shouldn't cost an undo
+  // step, the same principle every other commit already gets for free by
+  // returning `g` unchanged when there's nothing to do.
   const tidyRows = useCallback(() => {
-    commit((g) => reflowAll(g), { layout: false });
+    commit(
+      (g) => {
+        const next = reflowAll(g);
+        const changed = Object.keys(g.people).some((id) => {
+          const before = g.people[id];
+          const after = next.people[id];
+          return (
+            !after ||
+            before.placed !== after.placed ||
+            before.position?.x !== after.position?.x ||
+            before.position?.y !== after.position?.y
+          );
+        });
+        return changed ? next : g;
+      },
+      { layout: false }
+    );
   }, [commit]);
 
   const resetAll = useCallback(() => {
