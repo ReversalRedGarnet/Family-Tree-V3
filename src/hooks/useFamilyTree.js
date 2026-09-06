@@ -177,31 +177,46 @@ export function useFamilyTree() {
     [commit]
   );
 
-  // Links an EXISTING person to one or two parents in one step — the
-  // drag-a-card-onto-a-parent-line gesture. Kept separate from
-  // addRelationship (which only ever writes one link) for the same reason
-  // addRelative bundles a new person's links into one commit: adopting into
-  // a couple with two parents should be one undo, not two.
-  const addParentLinks = useCallback(
-    (childId, parentIds) => {
-      const prepared = (parentIds || [])
-        .filter((parentId) => parentId && parentId !== childId)
-        .map((parentId) => ({ id: generateId('rel'), kind: 'parent', a: parentId, b: childId }));
+  // Writes several relationships in ONE commit — the general form of what
+  // addRelative already does for a brand-new person's links, and what
+  // addParentLinks below does for adopting an existing person into a
+  // couple. Any batch of relationships that should stand or fall (and
+  // undo) together goes through here, rather than each getting its own
+  // addRelationship call and its own history entry.
+  const addRelationshipBatch = useCallback(
+    (rels) => {
+      const prepared = (rels || [])
+        .filter((r) => r && r.kind && r.a && r.b && r.a !== r.b)
+        .map((r) => ({ id: generateId('rel'), kind: r.kind, a: r.a, b: r.b, ...(r.details || {}) }));
       if (!prepared.length) return [];
 
       commit((g) => {
-        if (!g.people[childId]) return g;
         const relationships2 = { ...g.relationships };
+        let wrote = false;
         prepared.forEach((rel) => {
-          if (!g.people[rel.a]) return;
+          if (!g.people[rel.a] || !g.people[rel.b]) return;
           relationships2[rel.id] = rel;
+          wrote = true;
         });
-        return { ...g, relationships: relationships2 };
+        return wrote ? { ...g, relationships: relationships2 } : g;
       });
 
       return prepared.map((rel) => rel.id);
     },
     [commit]
+  );
+
+  // Links an EXISTING person to one or two parents in one step — the
+  // drag-a-card-onto-a-parent-line gesture. A thin wrapper around
+  // addRelationshipBatch for the one relationship shape it always writes.
+  const addParentLinks = useCallback(
+    (childId, parentIds) =>
+      addRelationshipBatch(
+        (parentIds || [])
+          .filter((parentId) => parentId && parentId !== childId)
+          .map((parentId) => ({ kind: 'parent', a: parentId, b: childId }))
+      ),
+    [addRelationshipBatch]
   );
 
   const deleteRelationship = useCallback(
@@ -338,6 +353,7 @@ export function useFamilyTree() {
     deletePerson,
     movePerson,
     addRelationship,
+    addRelationshipBatch,
     addParentLinks,
     addPartnerWithLoss,
     deleteRelationship,

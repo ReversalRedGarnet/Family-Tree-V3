@@ -74,6 +74,7 @@ export const SIBLING_TYPES = [
   { id: 'full', label: 'Siblings' },
   { id: 'half', label: 'Half siblings' },
   { id: 'step', label: 'Step siblings' },
+  { id: 'adopted', label: 'Adopted siblings' },
 ];
 
 export const PARENT_TYPES = [
@@ -104,7 +105,13 @@ export const LINE_STYLES = {
   // type is. One label, derived from the same rule the line style itself
   // uses (constants.js's `soft` check: type !== 'birth'), can't drift.
   parentSoft: { color: '#7FD3DD', width: 2,   dash: [6, 4],   marker: 'none',        label: 'Non-birth parent' },
-  sibling:    { color: '#7A9299', width: 2,   dash: [2, 5],   marker: 'none',        label: 'Siblings' },
+  sibling:    { color: '#7A9299', width: 2,   dash: [2, 5],   marker: 'none',        label: 'Siblings (full)' },
+  // Same arch, same dash — only the colour differs, matching how parent
+  // vs. parentSoft are also distinguished by colour alone (both leave
+  // marker at 'none'). A muted colour rather than a new dash pattern or
+  // marker keeps a half/step/adopted arch reading as "still a sibling
+  // link" at a glance, not a visually unrelated relationship.
+  siblingSoft: { color: '#A8BEC4', width: 2,  dash: [2, 5],   marker: 'none',        label: 'Siblings (half / step / adopted)' },
   other:      { color: '#A8BEC4', width: 1.75, dash: [1, 5],  marker: 'none',        label: 'Other link' },
 };
 

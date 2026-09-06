@@ -261,15 +261,51 @@ export default function RelationshipModal({
         )}
 
         {kind === 'sibling' && (
-          <label className="block">
+          <div className="space-y-2">
             <Label hint="They'll share a row. Parents can be added later, or not at all.">Kind of siblings</Label>
-            <select value={siblingType} onChange={(e) => setSiblingType(e.target.value)} className={field}>
-              {SIBLING_TYPES.map((t) => (
-                <option key={t.id} value={t.id}>{t.label}</option>
-              ))}
-            </select>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setSiblingType('full')}
+                className={`flex-1 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+                  siblingType === 'full'
+                    ? 'border-cyan bg-cyan-wash text-cyan-deep'
+                    : 'border-hairline bg-white text-ink hover:border-cyan-soft'
+                }`}
+              >
+                Fully biological
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setSiblingType((prev) =>
+                    prev === 'full'
+                      ? suggestedSiblingType && suggestedSiblingType !== 'full'
+                        ? suggestedSiblingType
+                        : 'half'
+                      : prev
+                  )
+                }
+                className={`flex-1 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+                  siblingType !== 'full'
+                    ? 'border-cyan bg-cyan-wash text-cyan-deep'
+                    : 'border-hairline bg-white text-ink hover:border-cyan-soft'
+                }`}
+              >
+                Other
+              </button>
+            </div>
+
+            {siblingType !== 'full' && (
+              <select value={siblingType} onChange={(e) => setSiblingType(e.target.value)} className={field}>
+                {SIBLING_TYPES.filter((t) => t.id !== 'full').map((t) => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
+              </select>
+            )}
+
             {siblingSuggestion && (
-              <p className="mt-1.5 text-xs leading-snug text-mist">
+              <p className="text-xs leading-snug text-mist">
                 {siblingType === siblingSuggestion.type
                   ? `Filled in from the parents already on the board — ${siblingSuggestion.reason.toLowerCase()}`
                   : `The board suggests ${
@@ -278,7 +314,7 @@ export default function RelationshipModal({
                     }, but your choice stands.`}
               </p>
             )}
-          </label>
+          </div>
         )}
 
         {kind === 'other' && (

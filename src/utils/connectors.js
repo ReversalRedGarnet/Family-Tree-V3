@@ -20,6 +20,15 @@ export function partnerStyleKey(rel) {
   return rel.type || 'partner';
 }
 
+// A sibling link's own `type` decides its line, same idea as
+// partnerStyleKey above and the parent group's `soft` check: only 'full'
+// (or no type recorded at all — the field predates 'adopted' existing)
+// reads as the plain sibling style; half, step and adopted all share the
+// muted one.
+export function siblingStyleKey(rel) {
+  return rel.type && rel.type !== 'full' ? 'siblingSoft' : 'sibling';
+}
+
 // ---- Building ----
 
 // Parent links are grouped into a shared drop so a couple's children hang
@@ -123,7 +132,7 @@ function siblingConnectors(rels, positions) {
     out.push({
       key: `sibling:${rel.id}`,
       kind: 'sibling',
-      style: LINE_STYLES.sibling,
+      style: LINE_STYLES[siblingStyleKey(rel)],
       arch: { ax: a.x, ay: a.y - HALF_H, bx: b.x, by: b.y - HALF_H, archY },
       // Straight runs of the arch, close enough for measuring against.
       segments: [

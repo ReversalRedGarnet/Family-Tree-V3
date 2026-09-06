@@ -255,17 +255,40 @@ label both key off "is this birth?" instead.
 
 ## Kinds of siblings
 
-Full, half and step are recorded on the sibling link, but the form fills
-them in for you from the parents already on the board: two shared parents
-reads as full, one shared parent reads as half, and no shared parent whose
-parents are partners reads as step. The reasoning is shown under the field,
-and the choice can always be overridden.
+Full, half, step and adopted are recorded on the sibling link. The dialog
+asks it in two steps: "Fully biological" or "Other" first, and only when
+"Other" is picked does it show which — half, step, or adopted. The form
+fills the detailed choice in for you from the parents already on the
+board: two shared parents (both by birth) reads as full; two shared
+parents where at least one link isn't a birth link (adoptive, step,
+foster, guardian) reads as adopted; one shared parent reads as half; no
+shared parent whose parents are partners reads as step. The reasoning is
+shown under the field, and the choice can always be overridden.
 
 Where the recorded parentage is too thin to tell, nothing is guessed. Two
 people sharing one parent are only offered "half" once both of them have a
 second parent on record — otherwise the second parent may simply not have
 been entered yet, and they could just as easily be full siblings. Quietly
 labelling that "half" would be inventing a fact about someone's family.
+
+Only "full" siblings draw as the plain sibling arch; half, step and
+adopted all share a second, muted-colour version of the same arch — same
+dash pattern, so it still reads as "a sibling link" at a glance, just not
+the default case.
+
+**A new sibling link merges the two people's whole sibling groups, not
+just the one pair.** If B already has a recorded sibling C, and someone
+links A to B as siblings, A and C become siblings too — siblinghood is
+transitive, so leaving that implied link undrawn would just mean the
+board understates what's already true. This runs as one commit (one undo
+for the whole merge), and each newly-implied pair gets its OWN type
+inferred fresh from its own recorded parentage — never copied from
+whatever type the original A-B pair was given, since two people's actual
+shared parentage doesn't change because someone elsewhere in the group got
+called "half". A pair that would contradict itself (already recorded as
+parent/child, or as partners) is left out of the merge rather than forced
+into a second, contradictory relationship, and the toast says how many
+pairs that affected, if any.
 
 ## Error handling this build takes into account
 
@@ -277,6 +300,18 @@ labelling that "half" would be inventing a fact about someone's family.
   partnership doesn't block a new one between that same pair: that's a
   remarriage, a new chapter in their history, not a duplicate of the old
   record, and both stay on the board side by side.
+- **A second active partnership is blocked too**, even with someone else
+  entirely: a person already in an unconcluded relationship (together or
+  separated — nothing has ended) can't also become partners with a third
+  person until the first one is marked as ended. Concluded relationships
+  (divorced, widowed) don't count, for the same remarriage reason above.
+- **Partners and siblings are mutually exclusive.** Two people already
+  recorded as partners can't also become siblings, and two people already
+  recorded as siblings can't also become partners — in either direction,
+  and (for the sibling side) regardless of whether the partnership has
+  since ended, since that's a different kind of contradiction than the
+  remarriage case: the two relationship kinds describe fundamentally
+  different bonds, not different chapters of the same one.
 - **Duplicate people** are caught before they land: saving someone whose
   name, gender and year of birth all match a card already on the board
   raises "You already added this person" and asks before continuing. It's

@@ -9,7 +9,7 @@ function Glyph({ styleKey }) {
 
   return (
     <svg width="44" height="18" viewBox="0 0 44 18" className="shrink-0" aria-hidden="true">
-      {styleKey === 'sibling' ? (
+      {styleKey === 'sibling' || styleKey === 'siblingSoft' ? (
         <path
           d="M6 16 V8 Q6 5 9 5 H35 Q38 5 38 8 V16"
           fill="none"
@@ -62,6 +62,7 @@ const ROWS = [
   'parent',
   'parentSoft',
   'sibling',
+  'siblingSoft',
   'other',
 ];
 

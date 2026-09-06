@@ -1,8 +1,13 @@
-import { wouldCreateCycle, parentsOf } from './generations';
+import { wouldCreateCycle, parentsOf, activePartnersOf } from './generations';
 import { getPersonDateWarnings, getParentChildAgeWarnings } from './dates';
 
 const unordered = (rel, x, y) =>
   (rel.a === x && rel.b === y) || (rel.a === y && rel.b === x);
+
+const displayName = (people, id) => {
+  const p = people[id];
+  return p ? `${p.firstName} ${p.lastName}`.trim() || 'Unnamed' : 'Someone';
+};
 
 // The only blocking rules left are the ones that would make the tree
 // self-contradictory. Everything else — no parents yet, no partner, a child
@@ -46,6 +51,40 @@ export function validateRelationship(kind, aId, bId, people, relationships) {
     if (parentLink) {
       return { ok: false, error: 'These two are already parent and child.' };
     }
+
+    // Recorded siblings can't also become partners. This is the same
+    // contradiction as the parent/child one above, just for a different
+    // relationship — the two labels describe incompatible kinds of bond,
+    // whichever direction it's approached from.
+    const siblingLink = Object.values(relationships).find(
+      (rel) => rel.kind === 'sibling' && unordered(rel, aId, bId)
+    );
+    if (siblingLink) {
+      return { ok: false, error: 'These two are already recorded as siblings.' };
+    }
+
+    // A person already in an unconcluded partnership with someone ELSE
+    // can't also become partners with a third person — marriage (or any
+    // partner-kind link) is exclusive while it's still current. This is a
+    // different check from the "already have that link" one above: that
+    // one catches the SAME pair twice, this one catches a person already
+    // spoken for by a DIFFERENT pair. Concluded partnerships (divorced,
+    // widowed) don't count here either, for the same remarriage reason
+    // they don't count as a duplicate above.
+    const aTaken = activePartnersOf(aId, relationships).filter((id) => id !== bId);
+    const bTaken = activePartnersOf(bId, relationships).filter((id) => id !== aId);
+    if (aTaken.length) {
+      return {
+        ok: false,
+        error: `${displayName(people, aId)} is already partnered with ${displayName(people, aTaken[0])} — that link needs to end first.`,
+      };
+    }
+    if (bTaken.length) {
+      return {
+        ok: false,
+        error: `${displayName(people, bId)} is already partnered with ${displayName(people, bTaken[0])} — that link needs to end first.`,
+      };
+    }
   }
 
   if (kind === 'sibling') {
@@ -54,6 +93,15 @@ export function validateRelationship(kind, aId, bId, people, relationships) {
     );
     if (parentLink) {
       return { ok: false, error: 'These two are already parent and child.' };
+    }
+
+    // Symmetric with the partner check above: two people already recorded
+    // as partners can't also become siblings.
+    const partnerLink = Object.values(relationships).find(
+      (rel) => rel.kind === 'partner' && unordered(rel, aId, bId)
+    );
+    if (partnerLink) {
+      return { ok: false, error: 'These two are already recorded as partners.' };
     }
   }
 

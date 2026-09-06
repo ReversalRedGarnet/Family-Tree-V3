@@ -18,7 +18,7 @@ import {
   collectTreeWarnings,
   findDuplicatePerson,
 } from './utils/validation';
-import { parentsOf, activePartnersOf } from './utils/generations';
+import { parentsOf, activePartnersOf, planSiblingMerge } from './utils/generations';
 import { exportAsPng, exportAsPdf } from './utils/exportTree';
 import { saveGraph } from './utils/storage';
 import { MOBILE_BREAKPOINT, exportThemeFor } from './utils/constants';
@@ -274,6 +274,30 @@ export default function App() {
         setLinkModal((m) => ({ ...m, error: check.error }));
         return;
       }
+
+      if (kind === 'sibling') {
+        // Siblinghood is transitive: if A is now B's sibling, and B was
+        // already recorded as C's sibling, A and C are implicitly siblings
+        // too. planSiblingMerge works out every pair that implies, so the
+        // whole merge lands in one commit — one undo for the group, not
+        // one per pair.
+        const { pairs, impliedCount, skipped } = planSiblingMerge(aId, bId, details.type, relationships);
+        tree.addRelationshipBatch(pairs);
+        setLinkModal(CLOSED_LINK);
+        tree.clearSelection();
+        const skippedNote = skipped
+          ? ` (${skipped} skipped — already parent/child or partners with someone in the group)`
+          : '';
+        pushToast(
+          impliedCount
+            ? `Linked as siblings — and ${impliedCount} other existing sibling${impliedCount > 1 ? 's' : ''} carried across automatically.${skippedNote}`
+            : `Linked. The line style shows what kind — see the key in the panel.${skippedNote}`,
+          'success',
+          5000
+        );
+        return;
+      }
+
       if (deceasedId) {
         // One step, so the link and the loss can't get out of sync.
         tree.addPartnerWithLoss(aId, bId, details, deceasedId);

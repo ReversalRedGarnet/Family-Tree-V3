@@ -145,12 +145,27 @@ export function activePartnersOf(personId, relationships) {
 export function inferSiblingType(aId, bId, relationships) {
   if (!aId || !bId || aId === bId) return null;
 
-  const aParents = parentsOf(aId, relationships);
-  const bParents = parentsOf(bId, relationships);
+  const aParentRels = Object.values(relationships).filter((r) => r.kind === 'parent' && r.b === aId);
+  const bParentRels = Object.values(relationships).filter((r) => r.kind === 'parent' && r.b === bId);
+  const aParents = aParentRels.map((r) => r.a);
+  const bParents = bParentRels.map((r) => r.a);
   const shared = aParents.filter((id) => bParents.includes(id));
 
   if (shared.length >= 2) {
-    return { type: 'full', reason: 'They share both recorded parents.' };
+    // Both shared parents are on record for both of them — but if either
+    // side's link to one of those shared parents is anything but a birth
+    // link (adoptive, step, foster, guardian), this reads as an adopted
+    // sibling relationship, not a fully biological one. A birth link on
+    // BOTH sides for a shared parent is what "fully biological" actually
+    // means; one adoptive link is enough to say otherwise.
+    const nonBirth = shared.some((parentId) => {
+      const aRel = aParentRels.find((r) => r.a === parentId);
+      const bRel = bParentRels.find((r) => r.a === parentId);
+      return (aRel?.type && aRel.type !== 'birth') || (bRel?.type && bRel.type !== 'birth');
+    });
+    return nonBirth
+      ? { type: 'adopted', reason: 'They share both recorded parents, but at least one link is not a birth parent.' }
+      : { type: 'full', reason: 'They share both recorded parents.' };
   }
 
   if (shared.length === 1) {
@@ -173,4 +188,95 @@ export function inferSiblingType(aId, bId, relationships) {
   }
 
   return null;
+}
+
+// Everyone currently reachable from `personId` by walking explicit sibling
+// links — transitively, so if A-B and B-C are both recorded, A and C count
+// as being in the same group even with no direct A-C link yet. Does NOT
+// include `personId` itself. Used to merge two sibling groups into one
+// whenever a new cross-group sibling link is made: siblinghood is
+// transitive in the way "shares a parent" is, so a new link between two
+// existing groups implies every cross-pair between them, not just the one
+// pair someone actually dragged.
+export function siblingGroupOf(personId, relationships) {
+  const found = new Set();
+  const stack = [personId];
+  const rels = Object.values(relationships).filter((r) => r.kind === 'sibling');
+
+  while (stack.length) {
+    const current = stack.pop();
+    rels.forEach((rel) => {
+      if (rel.a !== current && rel.b !== current) return;
+      const other = rel.a === current ? rel.b : rel.a;
+      if (other === personId || found.has(other)) return;
+      found.add(other);
+      stack.push(other);
+    });
+  }
+  return found;
+}
+
+// The plan for confirming ONE new sibling link (aId, bId, with the type the
+// person chose in the dialog) into every relationship it actually implies:
+// the explicit pair itself, plus a cross-link for every OTHER pair between
+// A's existing sibling group and B's — the transitive closure a new
+// cross-group link creates. Pure and side-effect-free on purpose, so the
+// merge itself (the part actually worth getting right — a dedup bug here
+// either silently drops a pair or writes a duplicate relationship) can be
+// checked without a live commit.
+//
+// Every pair OTHER than the explicit one gets its type freshly inferred
+// from recorded parentage (inferSiblingType) rather than copying the
+// explicit pair's type — two people's actual shared parentage doesn't
+// change just because someone else in the group got called "half"
+// siblings. Where inference can't tell, the explicit pair's type is the
+// closest fact-free default there is.
+export function planSiblingMerge(aId, bId, type, relationships) {
+  const groupA = [aId, ...siblingGroupOf(aId, relationships)];
+  const groupB = [bId, ...siblingGroupOf(bId, relationships)];
+  const existingPair = (x, y) =>
+    Object.values(relationships).some(
+      (rel) => rel.kind === 'sibling' && ((rel.a === x && rel.b === y) || (rel.a === y && rel.b === x))
+    );
+  // An implied pair that's already recorded as parent/child or as
+  // partners can't ALSO become siblings — the same contradiction
+  // validateRelationship refuses for the explicit pair, just reached here
+  // through the merge instead of a direct drag. The explicit pair was
+  // already checked before this ever runs; only the pairs THIS function
+  // invents need checking, since nothing else has looked at them yet.
+  const contradicts = (x, y) =>
+    Object.values(relationships).some(
+      (rel) =>
+        (rel.kind === 'parent' || rel.kind === 'partner') &&
+        ((rel.a === x && rel.b === y) || (rel.a === y && rel.b === x))
+    );
+
+  const seen = new Set();
+  const pairs = [];
+  let impliedCount = 0;
+  let skipped = 0;
+
+  groupA.forEach((x) => {
+    groupB.forEach((y) => {
+      if (x === y) return;
+      const key = [x, y].sort().join('|');
+      if (seen.has(key) || existingPair(x, y)) return;
+      seen.add(key);
+
+      const isPrimary = (x === aId && y === bId) || (x === bId && y === aId);
+      if (!isPrimary && contradicts(x, y)) {
+        skipped += 1;
+        return;
+      }
+
+      let pairType = type;
+      if (!isPrimary) {
+        impliedCount += 1;
+        pairType = inferSiblingType(x, y, relationships)?.type || type;
+      }
+      pairs.push({ kind: 'sibling', a: x, b: y, details: { type: pairType } });
+    });
+  });
+
+  return { pairs, impliedCount, skipped };
 }
