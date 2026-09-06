@@ -89,11 +89,12 @@ src/
     useFamilyTree.js        People/relationships state, undo/redo history, derived generations
     useToasts.js            Small notification queue for errors/warnings/success
     useMediaQuery.js        matchMedia wrapper for the drawer-vs-rail decision
+    useDriveSync.js         Optional Google Drive sync: sign-in, conflict handshake, autosync
   components/
     Canvas.jsx              Konva stage: pan/zoom, drag-to-link, right-click menu
     PersonNode.jsx          One person's card (shape from gender, colour, dates, conflict badge)
     RelationshipLines.jsx   Every link drawn in the line language below
-    Sidebar.jsx             Person list/search, add/export/undo/reset controls, legend
+    Sidebar.jsx             Person list/search, add/export/undo/reset controls, legend, sync status
     Legend.jsx              The key: the same glyphs RelationshipLines draws
     PersonModal.jsx         Add/edit person form (warnings, delete)
     RelationshipModal.jsx   Confirm a link's kind/type/status after drag-drop or menu
@@ -113,6 +114,8 @@ src/
     validation.js           Blocking rules + non-blocking warnings + duplicate detection
     dates.js                Forgiving date parsing for warning checks
     storage.js              Versioned localStorage autosave for this browser only
+    driveConfig.js          The one file to edit: your own Google OAuth client ID
+    driveSync.js            Drive REST calls, plus the pure sign-in reconciliation decision
     exportTree.js           Composites the memo footer, exports PNG/PDF
 ```
 
@@ -332,23 +335,83 @@ If `localStorage` is unavailable or full, saving fails quietly rather than
 interrupting anything — a single toast warns once per session so it isn't
 repeated on every edit.
 
-## Looking ahead: optional Drive-based sync
+## Google Drive sync (optional)
 
-Under consideration, not yet built: an optional sign-in that saves to the
-user's own Google Drive (`drive.appdata` scope — a hidden per-app folder,
-never the user's visible Drive), as an alternative to today's guest/local-only
-mode rather than a replacement for it. The appeal is that it keeps the app
-backend-free: no server of ours ever holds anyone's family data, so there's
-nothing here for us to secure or be liable for beyond what Google already
-secures for the user's own account. A Firebase-backed version was also
-weighed — its offline-sync engine solves multi-device conflicts far more
-neatly — but it would mean administering a project of our own (security
-rules, a billing surface) rather than storing nothing at all, which is the
-whole point of this app's spec. If this gets built, the real design
-questions are token refresh on a static page with no server to help, what
-happens when the same tree is edited on two devices before either goes back
-online, and how a guest-mode tree gets offered up for migration the first
-time someone signs in.
+An optional sign-in that saves the tree to the user's own Google Drive —
+an alternative to guest/local-only mode, not a replacement for it. Guest
+mode keeps working exactly as before whether or not this is ever set up;
+the localStorage copy stays as a fast local cache even when signed in.
+
+### Setting it up
+
+Drive sync is switched off out of the box: `src/utils/driveConfig.js` ships
+with a placeholder client ID, and the app hides every sign-in control until
+that's replaced. To turn it on:
+
+1. In the [Google Cloud Console](https://console.cloud.google.com/), create
+   a project (or use an existing one), then **APIs & Services -> Library**
+   and enable the **Google Drive API**.
+2. **APIs & Services -> OAuth consent screen**: set it up for **External**
+   users (or **Internal** if this is for a Google Workspace org only). It
+   can stay in "Testing" status for personal use — that just limits sign-in
+   to email addresses you explicitly add as test users, which is fine for
+   sharing a tree with family.
+3. **APIs & Services -> Credentials -> Create Credentials -> OAuth client
+   ID**, application type **Web application**. Add your GitHub Pages URL
+   (`https://<you>.github.io`) under **Authorized JavaScript origins** —
+   not "Authorized redirect URIs", which this flow doesn't use.
+4. Copy the client ID (ends in `.apps.googleusercontent.com`) into
+   `GOOGLE_CLIENT_ID` in `src/utils/driveConfig.js`. It is not a secret —
+   this flow never uses a client secret at all, so committing it is normal
+   and safe, the same as any other OAuth client ID shipped in a browser app.
+
+No server, no database, and no credentials of ours are involved anywhere in
+this — everything above happens in Google's own console, under the user's
+own Google account.
+
+### What it actually does
+
+Signing in asks for the narrow `drive.appdata` scope: a folder that, per
+Google's own scope documentation, is invisible in the user's normal Drive
+UI and inaccessible to any other app — nothing broader is ever requested.
+One JSON file lives there, holding the same `people`/`relationships` shape
+as the local save, plus a `savedAt` timestamp.
+
+**Sign-in is a real Google consent screen** the first time, and a silent,
+popup-free reauth on every later visit — this is a static page with no
+server, so there is no refresh token to hold the way a backend-based app
+would; a browser blocking third-party storage, or the user revoking access
+from their Google account, makes the silent attempt fail, and the only
+fallback is showing the "Sign in" button again rather than anything
+failing loudly.
+
+**Reconciling what's on Drive against what's on this device** happens once,
+right after sign-in, and always resolves one of four ways:
+- Drive is empty, this device has a tree -> pushed up, silently.
+- This device is empty, Drive has a tree -> pulled down, silently.
+- Both are empty, or Drive hasn't changed since this device last synced ->
+  nothing to do (or a routine push of ongoing edits).
+- Anything else — most commonly, another device saved something since
+  this one last synced, or this is the first time this particular device
+  has ever seen this Drive file while already holding a tree of its own —
+  is handed to the person as an explicit choice: keep this device's tree,
+  or load Drive's. **Whichever isn't picked gets overwritten** — Undo
+  reaches back through that choice immediately after (and re-syncs the
+  reverted state, since an undo is just another change), but only until
+  the tab is closed or reloaded.
+
+Once signed in, every structural change pushes to Drive automatically,
+debounced by a couple of seconds so rapid edits don't turn into a Drive API
+call per keystroke.
+
+### What this doesn't cover
+
+Real-time collaboration — two people editing the same tree from two
+devices at the same moment. The reconciliation above runs once at sign-in,
+not continuously, so two devices both signed in and both being edited at
+once will each keep pushing over the other rather than merging; the
+conflict prompt only catches a mismatch that already existed *before* the
+current editing session started.
 
 ## Export templates
 

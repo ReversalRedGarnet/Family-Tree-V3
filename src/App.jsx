@@ -11,6 +11,7 @@ import Tooltip from './components/Tooltip';
 import { useFamilyTree } from './hooks/useFamilyTree';
 import { useToasts } from './hooks/useToasts';
 import { useMediaQuery } from './hooks/useMediaQuery';
+import { useDriveSync } from './hooks/useDriveSync';
 import {
   validateRelationship,
   describeDeleteImpact,
@@ -46,6 +47,41 @@ export default function App() {
   const [contextMenu, setContextMenu] = useState(CLOSED_MENU);
 
   const { people, relationships, selectedIds, generation, conflicts } = tree;
+  const drive = useDriveSync({
+    people,
+    relationships,
+    replaceGraph: tree.replaceGraph,
+    pushToast,
+  });
+
+  // Drive found a version it can't reconcile silently — hand it to the
+  // person through the same single confirm-dialog slot everything else
+  // uses, rather than a second dialog that could stack on top of one
+  // already open. Whichever they pick overwrites the other side; Undo
+  // reaches back through it immediately after (and re-syncs, since an
+  // undo is just another change), but only until the next reload.
+  useEffect(() => {
+    if (!drive.conflict) return;
+    const savedWhen = drive.conflict.driveSavedAt
+      ? new Date(drive.conflict.driveSavedAt).toLocaleString()
+      : 'earlier';
+    setConfirmState({
+      title: 'Different tree on Google Drive',
+      message: `Drive has a different version of this tree, last saved ${savedWhen}. Whichever you pick overwrites the other — Undo gets you back right after, but not once you reload.`,
+      confirmLabel: "Use Drive's version",
+      cancelLabel: 'Keep this device',
+      onConfirm: () => {
+        setConfirmState(null);
+        drive.resolveConflict('use-drive');
+      },
+      onCancel: () => {
+        setConfirmState(null);
+        drive.resolveConflict('keep-local');
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drive.conflict]);
+
   const warnings = useMemo(
     () => collectTreeWarnings(people, relationships),
     [people, relationships]
@@ -517,6 +553,7 @@ export default function App() {
         pushToast('Everyone re-flowed into generation rows.', 'success', 2500);
       }}
       onRequestReset={requestReset}
+      drive={drive}
     />
   );
 

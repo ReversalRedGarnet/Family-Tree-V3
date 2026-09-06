@@ -59,6 +59,56 @@ function Section({ title, hint, children, defaultOpen = true }) {
   );
 }
 
+function SyncStatus({ drive }) {
+  if (!drive.configured) return null;
+
+  const { status, conflict, lastSyncedAt, signIn, signOut } = drive;
+
+  if (conflict) return null; // the conflict dialog itself covers this moment
+
+  if (status === 'signed-out' || status === 'error') {
+    return (
+      <div className="mb-3 rounded-xl border border-hairline bg-paper px-3 py-2.5">
+        <button
+          onClick={signIn}
+          className="w-full rounded-lg bg-white px-3 py-2 text-left text-xs font-medium text-cyan-deep transition-colors hover:bg-cyan-wash"
+        >
+          Sign in with Google to sync across devices
+        </button>
+        {status === 'error' && drive.errorMessage && (
+          <p className="mt-1.5 px-1 text-[11px] leading-snug text-rose">{drive.errorMessage}</p>
+        )}
+      </div>
+    );
+  }
+
+  const label =
+    status === 'connecting'
+      ? 'Connecting…'
+      : status === 'syncing'
+        ? 'Syncing…'
+        : lastSyncedAt
+          ? `Synced to Drive`
+          : 'Signed in';
+
+  return (
+    <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-hairline bg-paper px-3 py-2">
+      <span className="flex items-center gap-1.5 text-xs text-mist">
+        <span
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+            status === 'syncing' || status === 'connecting' ? 'bg-cyan animate-pulse' : 'bg-sage'
+          }`}
+          aria-hidden="true"
+        />
+        {label}
+      </span>
+      <button onClick={signOut} className="text-xs font-medium text-mist underline-offset-2 hover:underline">
+        Sign out
+      </button>
+    </div>
+  );
+}
+
 export default function Sidebar({
   people,
   relationships,
@@ -79,6 +129,7 @@ export default function Sidebar({
   canRedo,
   onTidyRows,
   onRequestReset,
+  drive,
 }) {
   const roster = useMemo(() => {
     const groups = new Map();
@@ -129,7 +180,9 @@ export default function Sidebar({
         <div>
           <h1 className="font-display text-xl leading-tight text-ink">Family Tree</h1>
           <p className="mt-0.5 text-xs text-mist">
-            Saved automatically in this browser. Export a copy before switching devices.
+            {drive?.configured && drive.status === 'signed-in'
+              ? 'Synced to your Google Drive, and cached in this browser too.'
+              : 'Saved automatically in this browser. Export a copy before switching devices.'}
           </p>
         </div>
         <Tooltip label={isMobile ? 'Close the panel' : 'Collapse the panel'} placement="bottom">
@@ -143,6 +196,10 @@ export default function Sidebar({
           </button>
         </Tooltip>
       </header>
+
+      <div className="px-4">
+        <SyncStatus drive={drive || { configured: false }} />
+      </div>
 
       <div className="space-y-2 px-4 pb-4">
         <Action label="Add person" detail="Drops a new card on the board." onClick={onAddPerson} tone="primary">+</Action>

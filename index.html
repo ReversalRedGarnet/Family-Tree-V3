@@ -24,6 +24,14 @@
       Until one of these is in place the browser falls back to the system UI
       font. Nothing else in the app needs to change either way.
     -->
+    <!--
+      Google Identity Services — only used for the optional Drive sync
+      sign-in (src/hooks/useDriveSync.js). Loaded unconditionally since it's
+      tiny and async, but the app never calls into it unless
+      src/utils/driveConfig.js has a real client ID in it; see the "Google
+      Drive sync" section in README.md.
+    -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
   <body class="bg-paper">
     <div id="root"></div>

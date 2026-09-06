@@ -242,6 +242,30 @@ export function useFamilyTree() {
 
   // ---------- Layout / history ----------
 
+  // Swaps in a whole different graph in one step — the "load from Drive"
+  // case, where nothing about the current board carries over. One commit,
+  // one undo back to whatever was here before, exactly like any other
+  // change. Positions are trusted as saved and NOT relaid-out, matching
+  // the initial local-storage bootstrap above (`loadGraph()` at hook
+  // init, which also goes straight into state with no autoLayout pass) —
+  // a Drive-loaded tree should behave exactly like a locally-loaded one,
+  // not get a surprise relayout the local path never gets. If anything
+  // actually collides, Tidy rows (or the next ordinary edit) resolves it,
+  // same as it always would for a tree opened from an older save.
+  const replaceGraph = useCallback(
+    (graph) => {
+      commit(
+        () => ({
+          people: (graph && graph.people) || {},
+          relationships: (graph && graph.relationships) || {},
+        }),
+        { layout: false }
+      );
+      setSelectedIds([]);
+    },
+    [commit]
+  );
+
   // The only thing that overrides a hand-drag, and the only thing that
   // moves cards nobody touched. reflowAll returns a fully positioned graph,
   // so autoLayout would only be second-guessing it.
@@ -319,6 +343,7 @@ export function useFamilyTree() {
     deleteRelationship,
     tidyRows,
     resetAll,
+    replaceGraph,
     undo,
     redo,
     canUndo: history.past.length > 0,
