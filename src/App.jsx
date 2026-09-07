@@ -259,12 +259,18 @@ export default function App() {
   const openLinkModal = useCallback(
     (aId, bId, preset = 'partner') => {
       if (!aId || !bId) {
-        pushToast('Select two people first — tap one, then shift-tap another.', 'warning', 5000);
+        pushToast(
+          isMobile
+            ? 'Select two people first — tap one, then tap another (or drag one card onto another).'
+            : 'Select two people first — tap one, then shift-tap another (or drag one card onto another).',
+          'warning',
+          5000
+        );
         return;
       }
       setLinkModal({ open: true, a: aId, b: bId, preset, error: null });
     },
-    [pushToast]
+    [pushToast, isMobile]
   );
 
   const handleLinkConfirm = useCallback(
@@ -414,7 +420,11 @@ export default function App() {
           { label: 'Edit…', onSelect: () => openEditPerson(id) },
           {
             label: partner ? `Link to ${nameOf(partner)}…` : 'Link to another person…',
-            hint: partner ? undefined : 'Shift-click someone else first, or drag one card onto another.',
+            hint: partner
+              ? undefined
+              : isMobile
+                ? 'Tap another person, or drag one card onto this one.'
+                : 'Shift-click someone else first, or drag one card onto another.',
             onSelect: () => (partner ? openLinkModal(id, partner) : openLinkModal(id, null)),
           },
           { divider: true },
@@ -445,6 +455,7 @@ export default function App() {
       openAddPerson,
       requestDeletePerson,
       nameOf,
+      isMobile,
     ]
   );
 

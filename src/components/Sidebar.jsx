@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Tooltip from './Tooltip';
 import Legend from './Legend';
 
@@ -131,6 +131,18 @@ export default function Sidebar({
   onRequestReset,
   drive,
 }) {
+  // A tap has no shift key to hold, so a plain click event alone can't
+  // tell a touch tap from a mouse click the way Konva's separate onTap
+  // does on the canvas. Recorded here on pointerdown (which DOES carry
+  // pointerType) and read back in the click handler right after — kept as
+  // a ref rather than state since it's write-then-immediately-read,
+  // never something a re-render should react to. Keyboard activation
+  // (Enter/Space on a focused button) fires no pointerdown at all, so it
+  // falls through to whatever this last held — 'mouse' until any pointer
+  // has touched the roster, which is the right default: a keyboard user
+  // has a real Shift key too.
+  const lastPointerTypeRef = useRef('mouse');
+
   const roster = useMemo(() => {
     const groups = new Map();
     Object.values(people).forEach((person) => {
@@ -238,7 +250,9 @@ export default function Sidebar({
         hint={
           personCount === 0
             ? undefined
-            : 'Tap to select. Shift-tap to add a second person, then use Link two people.'
+            : isMobile
+              ? 'Tap to select. Tap a second person to add them, then use Link two people.'
+              : 'Tap to select. Shift-tap to add a second person, then use Link two people.'
         }
       >
         {personCount === 0 ? (
@@ -256,9 +270,16 @@ export default function Sidebar({
                   {list.map((person) => (
                     <button
                       key={person.id}
-                      onClick={(e) => onSelect(person.id, e.shiftKey)}
+                      onPointerDown={(e) => {
+                        lastPointerTypeRef.current = e.pointerType;
+                      }}
+                      onClick={(e) => {
+                        const touchTap =
+                          lastPointerTypeRef.current === 'touch' || lastPointerTypeRef.current === 'pen';
+                        onSelect(person.id, touchTap || e.shiftKey);
+                      }}
                       onDoubleClick={() => onEditPerson(person.id)}
-                      title="Tap to select · double-tap to edit"
+                      title="Tap to select · double-tap to edit · tap a second person to select both"
                       className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
                         selectedIds.includes(person.id)
                           ? 'bg-cyan text-white'

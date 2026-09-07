@@ -125,10 +125,12 @@ src/
   canvas -> "Add person here".
 - **Link two people**: drag one person's card onto another's (an overlap of
   at least ~35% of the card area triggers a confirmation popup — the popup
-  appears on drop, not mid-drag), or shift-click to select exactly two
-  people and right-click -> "Link to {name}…". Either way the same dialog
-  opens — "How are they related?" — and nothing is written until it's
-  confirmed.
+  appears on drop, not mid-drag), or select exactly two people and
+  right-click -> "Link to {name}…". Selecting a second person is
+  shift-click on a mouse; on touch, since there's no shift key, a second
+  tap adds to the selection on its own — tapping two different people in a
+  row is enough. Either way the same dialog opens — "How are they
+  related?" — and nothing is written until it's confirmed.
 - **Adopt a card as a child by dropping it onto a line**: drag any card onto
   a parent-child line or a couple's line and let go — the line lights up
   while you are over it. This does not spawn a new person: the card you
@@ -162,7 +164,8 @@ src/
   - Each of these guards against the mistakes described below rather than
     silently doing nothing.
 - **Select / edit / move**: single click selects, double click edits,
-  shift-click multi-selects, drag moves a card left/right within its row.
+  shift-click (or, on touch, a second tap) multi-selects, drag moves a card
+  left/right within its row.
 - **Undo / redo**: sidebar buttons, or Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (or
   Ctrl+Y). Selection changes alone aren't tracked, so undo always reverts an
   actual structural change. Adopting a dragged card into one or two parents

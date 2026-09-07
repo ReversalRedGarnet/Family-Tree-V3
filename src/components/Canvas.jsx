@@ -399,7 +399,12 @@ const Canvas = forwardRef(function Canvas(
               onDragStart={handleDragStart}
               onDragMove={handleDragMove}
               onDragEnd={handleDragEnd}
-              onClick={(personId, e) => onSelect(personId, e.evt.shiftKey || e.evt.metaKey)}
+              // Shift/Cmd-click adds to the selection on a real keyboard; a
+              // touchscreen has neither key, so a tap has to mean the same
+              // thing on its own — otherwise picking two people to link on
+              // mobile is simply impossible, since every tap would replace
+              // the selection instead of building a pair.
+              onClick={(personId, e) => onSelect(personId, e.evt.shiftKey || e.evt.metaKey || isTouchEvent(e.evt))}
               onDblClick={onEditPerson}
               onContextMenu={(personId, e) => {
                 e.evt.preventDefault();
