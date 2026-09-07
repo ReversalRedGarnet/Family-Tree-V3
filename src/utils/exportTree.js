@@ -1,4 +1,7 @@
-import jsPDF from 'jspdf';
+// jsPDF is loaded lazily, inside exportAsPdf() only -- it's a meaningful
+// chunk of the main bundle for a library most visitors will never touch
+// (PNG is the default, PDF is a second click away). A dynamic import()
+// keeps it out of the initial load entirely and gives it its own chunk.
 
 // Captures the whole board, not just the visible viewport. The layer's
 // client rect is already in stage-container pixels (transform applied),
@@ -43,6 +46,10 @@ export async function exportAsPng(stage, fileName = 'family-tree') {
 export async function exportAsPdf(stage, fileName = 'family-tree') {
   try {
     if (!stage) return { ok: false, error: 'Canvas not available.' };
+    // Loaded here, not at module scope, so a bad network on someone's
+    // first-ever PDF export surfaces through the same catch/toast every
+    // other export failure already goes through -- no new failure mode.
+    const { default: jsPDF } = await import('jspdf');
     const { dataUrl, width, height } = captureDataUrl(stage);
 
     // Match page orientation to the board so wide trees aren't squashed.
