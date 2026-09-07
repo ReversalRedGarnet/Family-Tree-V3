@@ -248,12 +248,45 @@ tree always lays out the same way.
 Cards moved by hand are never snapped onto the lattice — they are treated
 as obstacles instead, since you put them exactly where you wanted them.
 **Tidy rows** is the one exception, and the only thing that moves cards
-nobody touched: it keeps each row's left-to-right order, closes the gaps
-onto the lattice, and re-centres every row on the centre line. It is also
-how a tree saved by an older build gets onto the lattice, since a loaded
-graph is otherwise left alone until something in it actually collides. A
-row with an even number of cards ends up half a slot off the centre line;
-keeping every card on a whole slot is worth more than centring it exactly.
+nobody touched. It is also how a tree saved by an older build gets onto the
+lattice, since a loaded graph is otherwise left alone until something in it
+actually collides.
+
+Tidy rows (`reflowAll` in `layout.js`) processes generations top to bottom
+(0, then 1, then 2, ...), and within each row it does **not** centre
+everyone on one universal line. Instead it groups the row into
+**clusters** — a person's own set of recorded parents is their cluster
+key, so a full sibling pair or the two children of one couple share a
+cluster, while two people with a different second parent (real
+half-siblings) land in different ones — and centres each cluster under the
+average X of its own parent(s), using those parents' positions as **this
+same tidy pass** just placed them, not whatever they started the pass
+with. Only the root generation, and anyone else with no recorded parents
+at all, falls back to the old universal centre line — someone with a
+partner who *does* have recorded parents borrows that partner's cluster
+instead, so a spouse who married into the family lands beside them rather
+than off at the board's centre by themselves.
+
+Within a row, clusters are ordered left to right by where they want to be
+and placed outward from their own centre in that order. A cluster is only
+ever nudged **right** of where it wants to be, and only when it would
+otherwise overlap the cluster just placed to its left — never left, since
+that would either disturb the earlier cluster or drift the row the same
+way the old right-only packing sweep used to. One empty lattice slot is
+always left between two adjacent clusters so separate branches of a family
+read as visibly distinct groups rather than one continuous row. Left-to-
+right order *within* a cluster keeps the same pre-tidy order it had
+before.
+
+A cluster with an even number of members ends up half a slot off its own
+centre; keeping every card on a whole slot is worth more than centring it
+exactly. A card with only one parent on record is still centred under
+that one parent — a cluster of size one, with a cluster key of just that
+parent's own id. Everyday insertion (`findNearestFreeX` / `placeCard` /
+`autoLayout`, described above) is unaffected by any of this: it still
+anchors a new card to whichever specific relative you added it from and
+never re-centres anyone else, which is deliberately a different job from
+the wholesale re-flow Tidy rows does.
 
 ## Kinds of parents
 
