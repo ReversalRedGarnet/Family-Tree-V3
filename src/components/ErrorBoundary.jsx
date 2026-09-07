@@ -46,7 +46,8 @@ class ErrorBoundary extends Component {
             The board stopped responding
           </h1>
           <p style={{ margin: '0.75rem 0 0', fontSize: '0.875rem', lineHeight: 1.6, color: '#5B7C85' }}>
-            Nothing was saved, so reloading starts a fresh board.
+            Reloading picks the tree back up from its last autosave — nothing
+            from before this happened is lost.
           </p>
           {this.state.error?.message && (
             <p
