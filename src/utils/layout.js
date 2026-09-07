@@ -23,7 +23,7 @@ import {
   ORIGIN_X,
   MIN_SLOT_GAP,
 } from './constants';
-import { computeGenerations, parentsOf, partnersOf } from './generations';
+import { computeGenerations, parentsOf, partnersOf, childrenOf } from './generations';
 
 export function rowY(gen) {
   return TOP_MARGIN + (Number.isFinite(gen) ? gen : 0) * ROW_HEIGHT;
@@ -298,33 +298,176 @@ function clusterCenterX(key, people) {
   return xs.reduce((sum, v) => sum + v, 0) / xs.length;
 }
 
-// "Tidy rows" — the deliberate re-flow, and the only thing that overrides a
-// hand-drag. Generations are processed top-down (0, then 1, then 2, ...) so
-// that by the time a row is laid out, every parent it might centre under
-// has already been placed for this pass. Within a row, people are grouped
-// into clusters by clusterKeyOf and each cluster is centred under its own
-// parents (clusterCenterX) rather than the whole row sharing one universal
-// centre line — a subtree hangs beneath its parents, not beneath whatever
-// the board's absolute centre happens to be. The root generation (nobody
-// has parents on the board) reduces to one pooled cluster centred on
-// ORIGIN_X, which is exactly the old behaviour, unchanged.
+// The mirror image of clusterParentIds/clusterKeyOf/clusterCenterX, for rows
+// ABOVE the widest generation (see reflowAll): once the widest row has set
+// the tree's horizontal scale, everything above it is worked out bottom-up
+// instead of top-down, so a parent couple needs to be keyed and centred on
+// their OWN CHILDREN rather than their own parents.
+function clusterChildIds(id, people, relationships) {
+  return childrenOf(id, relationships)
+    .filter((cid) => people[cid])
+    .sort();
+}
+
+// Two partners who parent the exact same set of children land in the same
+// cluster, the same way two full siblings share a cluster below. A partner
+// with no recorded children of their own borrows the key of a same-row
+// partner who has some — the step-parent case — one hop only, same rule as
+// clusterKeyOf's own fallback.
+function clusterKeyByChildren(id, rowIds, people, relationships) {
+  const own = clusterChildIds(id, people, relationships);
+  if (own.length) return own.join('|');
+
+  const rowSet = new Set(rowIds);
+  const partnerIds = partnersOf(id, relationships)
+    .filter((pid) => rowSet.has(pid))
+    .sort();
+  for (const partnerId of partnerIds) {
+    const theirs = clusterChildIds(partnerId, people, relationships);
+    if (theirs.length) return theirs.join('|');
+  }
+  return '';
+}
+
+// Where such a cluster wants to sit: the average x of its OWN children, read
+// from `people` — which, by the time a row above the anchor is placed,
+// already holds this pass's new position for every row below it, all the
+// way down to the anchor row itself. Nobody's children on the board at all
+// (a childless floater) falls back to the board's centre line, same as
+// clusterCenterX's own empty-key case.
+function clusterCenterXByChildren(key, people) {
+  if (!key) return ORIGIN_X;
+  const xs = key.split('|').map((cid) => people[cid]?.position?.x ?? ORIGIN_X);
+  return xs.reduce((sum, v) => sum + v, 0) / xs.length;
+}
+
+// Left-to-right order within a row, pre-clustering: existing x, then id as
+// the deterministic last resort. Every row uses this same tie-break, so
+// re-running Tidy on an already-tidy board never reshuffles anyone.
+function stableRowOrder(rowIds, originalPeople) {
+  return [...rowIds].sort((a, b) => {
+    const ax = Math.round(originalPeople[a].position?.x ?? 0);
+    const bx = Math.round(originalPeople[b].position?.x ?? 0);
+    if (ax !== bx) return ax - bx;
+    if (a < b) return -1;
+    if (a > b) return 1;
+    return 0;
+  });
+}
+
+// Places one row's worth of clusters, each centred on whatever `centerFn`
+// says it wants (a cluster's own parents, or its own children — see the two
+// call sites in reflowAll below). Clusters are ordered left-to-right by that
+// same centre, then placed outward from it in that order; a cluster is only
+// ever nudged RIGHT of its ideal centre, and only when it would otherwise
+// overlap the cluster just placed to its left. Nudging left is never done —
+// that would either disturb the cluster before it or drift the row the same
+// way a naive left-to-right sweep used to (see the module-level comment on
+// findNearestFreeX). One empty lattice slot is left between adjacent
+// clusters so two branches read as visibly separate groups rather than one
+// continuous row.
 //
-// Clusters within a row are ordered left-to-right by where they want to be,
-// then placed outward from their own centre in that order; a cluster is
-// only ever nudged RIGHT of its ideal centre, and only when it would
-// otherwise overlap the cluster just placed to its left. Nudging left is
-// never done — that would either disturb the cluster before it or drift
-// the row the same way a naive left-to-right sweep used to (see the
-// module-level comment on findNearestFreeX). One empty lattice slot is
-// left between adjacent clusters so two branches read as visibly separate
-// groups rather than one continuous row.
+// A cluster with an even number of members ends up half a slot right of its
+// own centre; keeping every card on a whole slot is worth more than
+// centring it perfectly. Mutates `people` in place — the accumulating
+// working copy every row of one reflowAll pass shares.
+function layoutRelativeRow(rowIds, gen, people, relationships, keyFn, centerFn) {
+  const clusters = new Map();
+  rowIds.forEach((id) => {
+    const key = keyFn(id, rowIds, people, relationships);
+    if (!clusters.has(key)) clusters.set(key, []);
+    clusters.get(key).push(id);
+  });
+
+  const ordered = [...clusters.entries()]
+    .map(([key, members]) => ({ members, centerX: centerFn(key, people) }))
+    .sort((a, b) => {
+      if (a.centerX !== b.centerX) return a.centerX - b.centerX;
+      // Same centre — order by whichever cluster's leftmost member would
+      // sort first, so the result never depends on Map iteration order.
+      const am = a.members[0];
+      const bm = b.members[0];
+      if (am < bm) return -1;
+      if (am > bm) return 1;
+      return 0;
+    });
+
+  let nextFreeSlot = -Infinity;
+  ordered.forEach(({ members, centerX }) => {
+    const half = Math.floor((members.length - 1) / 2);
+    let firstSlot = nearestSlotIndex(centerX) - half;
+    if (firstSlot < nextFreeSlot) firstSlot = nextFreeSlot;
+    const lastSlot = firstSlot + members.length - 1;
+
+    members.forEach((id, i) => {
+      people[id] = {
+        ...people[id],
+        placed: false,
+        placedGen: gen,
+        position: { x: slotX(firstSlot + i), y: rowY(gen) },
+      };
+    });
+
+    nextFreeSlot = lastSlot + 2; // +1 for the last slot itself, +1 for the gap
+  });
+}
+
+// Lays out the anchor row itself: the generation with the most people, with
+// nothing above or below it yet to take a centre from. Grouped into family
+// clusters the same way every other row is (clusterKeyOf only needs
+// relationship structure, not anyone's position), but placed as one evenly
+// spaced block — one empty slot between clusters, same as everywhere else —
+// centred on the board's centre line as a whole, since this row is what
+// gives that centre line meaning for the rest of the tree.
+function layoutAnchorRow(rowIds, gen, people, relationships) {
+  const clusters = new Map();
+  rowIds.forEach((id) => {
+    const key = clusterKeyOf(id, rowIds, people, relationships);
+    if (!clusters.has(key)) clusters.set(key, []);
+    clusters.get(key).push(id);
+  });
+  // A Map preserves insertion order, so grouping the pre-sorted row this way
+  // keeps clusters — and each cluster's own members — left-to-right too.
+  const ordered = [...clusters.values()];
+
+  const totalSlots =
+    ordered.reduce((sum, members) => sum + members.length, 0) + Math.max(0, ordered.length - 1);
+  // Same convention as a single cluster centring on its own middle: an even
+  // total ends up half a slot right of centre rather than splitting a card
+  // across the line.
+  let slot = -Math.floor((totalSlots - 1) / 2);
+
+  ordered.forEach((members) => {
+    members.forEach((id, i) => {
+      people[id] = {
+        ...people[id],
+        placed: false,
+        placedGen: gen,
+        position: { x: slotX(slot + i), y: rowY(gen) },
+      };
+    });
+    slot += members.length + 1; // +1 for the gap before the next cluster
+  });
+}
+
+// "Tidy rows" — the deliberate re-flow, and the only thing that overrides a
+// hand-drag.
+//
+// The generation with the most people sets the horizontal scale of the
+// whole tree: it is laid out FIRST, evenly spaced with no reference to
+// anyone else (layoutAnchorRow), and every other generation is positioned
+// relative to it — never the other way around. Generations below the anchor
+// are processed top-down exactly as before: each cluster centred under its
+// own parents, who by then already have their final position. Generations
+// above the anchor are the mirror image, processed bottom-up: each cluster
+// centred over its OWN children (clusterKeyByChildren / clusterCenterXByChildren),
+// who by then already have theirs. Either way, a subtree hangs from — or
+// stands over — its own family, not the whole row's, and a crowded
+// generation is never squeezed into whatever room a sparser one left behind
+// somewhere else in the tree.
 //
 // A hand-dragged (placed: true) card is not exempt here — Tidy rows is the
 // one thing that overrides a hand-drag, same as before this change.
-//
-// A cluster with an even number of members ends up half a slot right of
-// its own centre; keeping every card on a whole slot is worth more than
-// centring it perfectly.
 export function reflowAll(graph) {
   const { generation } = computeGenerations(graph.people, graph.relationships);
   const { relationships } = graph;
@@ -336,66 +479,34 @@ export function reflowAll(graph) {
     rowIdsByGen.get(gen).push(person.id);
   });
 
+  if (!rowIdsByGen.size) return { ...graph, people: {} };
+
   const people = { ...graph.people };
   const sortedGens = [...rowIdsByGen.keys()].sort((a, b) => a - b);
 
+  // Ties go to the shallowest generation, purely so the choice is
+  // deterministic regardless of Map iteration order.
+  let widestGen = sortedGens[0];
   sortedGens.forEach((gen) => {
-    const rowIds = rowIdsByGen.get(gen);
-
-    // Left-to-right order within a cluster is the pre-tidy order, same
-    // tie-break as before: existing x, then id as the deterministic
-    // last resort.
-    rowIds.sort((a, b) => {
-      const ax = Math.round(graph.people[a].position?.x ?? 0);
-      const bx = Math.round(graph.people[b].position?.x ?? 0);
-      if (ax !== bx) return ax - bx;
-      if (a < b) return -1;
-      if (a > b) return 1;
-      return 0;
-    });
-
-    // A Map preserves insertion order, so grouping the already-sorted row
-    // this way keeps every cluster's own member list left-to-right too.
-    const clusters = new Map();
-    rowIds.forEach((id) => {
-      const key = clusterKeyOf(id, rowIds, people, relationships);
-      if (!clusters.has(key)) clusters.set(key, []);
-      clusters.get(key).push(id);
-    });
-
-    const ordered = [...clusters.entries()]
-      .map(([key, members]) => ({ members, centerX: clusterCenterX(key, people) }))
-      .sort((a, b) => {
-        if (a.centerX !== b.centerX) return a.centerX - b.centerX;
-        // Same centre — order by whichever cluster's leftmost member
-        // would sort first, so the result never depends on Map iteration
-        // order.
-        const am = a.members[0];
-        const bm = b.members[0];
-        if (am < bm) return -1;
-        if (am > bm) return 1;
-        return 0;
-      });
-
-    let nextFreeSlot = -Infinity;
-    ordered.forEach(({ members, centerX }) => {
-      const half = Math.floor((members.length - 1) / 2);
-      let firstSlot = nearestSlotIndex(centerX) - half;
-      if (firstSlot < nextFreeSlot) firstSlot = nextFreeSlot;
-      const lastSlot = firstSlot + members.length - 1;
-
-      members.forEach((id, i) => {
-        people[id] = {
-          ...people[id],
-          placed: false,
-          placedGen: gen,
-          position: { x: slotX(firstSlot + i), y: rowY(gen) },
-        };
-      });
-
-      nextFreeSlot = lastSlot + 2; // +1 for the last slot itself, +1 for the gap
-    });
+    if (rowIdsByGen.get(gen).length > rowIdsByGen.get(widestGen).length) widestGen = gen;
   });
+
+  layoutAnchorRow(stableRowOrder(rowIdsByGen.get(widestGen), graph.people), widestGen, people, relationships);
+
+  sortedGens
+    .filter((gen) => gen > widestGen)
+    .forEach((gen) => {
+      const rowIds = stableRowOrder(rowIdsByGen.get(gen), graph.people);
+      layoutRelativeRow(rowIds, gen, people, relationships, clusterKeyOf, clusterCenterX);
+    });
+
+  sortedGens
+    .filter((gen) => gen < widestGen)
+    .sort((a, b) => b - a) // bottom-up: closest to the anchor first
+    .forEach((gen) => {
+      const rowIds = stableRowOrder(rowIdsByGen.get(gen), graph.people);
+      layoutRelativeRow(rowIds, gen, people, relationships, clusterKeyByChildren, clusterCenterXByChildren);
+    });
 
   return { ...graph, people };
 }
