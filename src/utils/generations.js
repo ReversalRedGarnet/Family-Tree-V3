@@ -225,6 +225,12 @@ export function siblingGroupOf(personId, relationships) {
 // either silently drops a pair or writes a duplicate relationship) can be
 // checked without a live commit.
 //
+// Safe to call on its own: if the explicit (aId, bId) pair itself already
+// contradicts the board (already parent/child, or already partners), or
+// isn't a real pair at all, nothing is written — `pairs` comes back empty
+// and `blocked` explains why. Callers that already validate the explicit
+// pair first (as every one does today) will just never see `blocked` set.
+//
 // Every pair OTHER than the explicit one gets its type freshly inferred
 // from recorded parentage (inferSiblingType) rather than copying the
 // explicit pair's type — two people's actual shared parentage doesn't
@@ -232,23 +238,42 @@ export function siblingGroupOf(personId, relationships) {
 // siblings. Where inference can't tell, the explicit pair's type is the
 // closest fact-free default there is.
 export function planSiblingMerge(aId, bId, type, relationships) {
-  const groupA = [aId, ...siblingGroupOf(aId, relationships)];
-  const groupB = [bId, ...siblingGroupOf(bId, relationships)];
-  const existingPair = (x, y) =>
-    Object.values(relationships).some(
-      (rel) => rel.kind === 'sibling' && ((rel.a === x && rel.b === y) || (rel.a === y && rel.b === x))
-    );
   // An implied pair that's already recorded as parent/child or as
   // partners can't ALSO become siblings — the same contradiction
   // validateRelationship refuses for the explicit pair, just reached here
-  // through the merge instead of a direct drag. The explicit pair was
-  // already checked before this ever runs; only the pairs THIS function
-  // invents need checking, since nothing else has looked at them yet.
+  // through the merge instead of a direct drag.
   const contradicts = (x, y) =>
     Object.values(relationships).some(
       (rel) =>
         (rel.kind === 'parent' || rel.kind === 'partner') &&
         ((rel.a === x && rel.b === y) || (rel.a === y && rel.b === x))
+    );
+
+  // Every caller today runs validateRelationship on the explicit (aId, bId)
+  // pair before ever reaching this function, so in practice this never
+  // trips — but this function shouldn't have to TRUST that. A future
+  // second call site that skips that step must not be able to write a
+  // contradictory sibling link just because the merge logic assumed
+  // someone else already checked. Nothing is written at all when the
+  // explicit pair itself is invalid, since every implied pair below is
+  // only meaningful in relation to it.
+  if (!aId || !bId || aId === bId) {
+    return { pairs: [], impliedCount: 0, skipped: 0, blocked: 'Pick two different people first.' };
+  }
+  if (contradicts(aId, bId)) {
+    return {
+      pairs: [],
+      impliedCount: 0,
+      skipped: 0,
+      blocked: 'These two already have a relationship that rules out being siblings.',
+    };
+  }
+
+  const groupA = [aId, ...siblingGroupOf(aId, relationships)];
+  const groupB = [bId, ...siblingGroupOf(bId, relationships)];
+  const existingPair = (x, y) =>
+    Object.values(relationships).some(
+      (rel) => rel.kind === 'sibling' && ((rel.a === x && rel.b === y) || (rel.a === y && rel.b === x))
     );
 
   const seen = new Set();
@@ -278,5 +303,5 @@ export function planSiblingMerge(aId, bId, type, relationships) {
     });
   });
 
-  return { pairs, impliedCount, skipped };
+  return { pairs, impliedCount, skipped, blocked: null };
 }

@@ -231,7 +231,12 @@ export default function App() {
           // has no other links yet, however `initial` above ends up
           // representing the anchor pair.
           const anchorType = inferSiblingType(pending.siblingId, id, relationships)?.type || 'full';
-          const { pairs } = planSiblingMerge(pending.siblingId, id, anchorType, relationships);
+          const { pairs, blocked } = planSiblingMerge(pending.siblingId, id, anchorType, relationships);
+          // A brand-new person can't already contradict anyone, so this
+          // never actually trips -- but planSiblingMerge now checks its own
+          // explicit pair regardless of who's calling it, so honour that
+          // here too rather than assuming it can't happen.
+          if (blocked) return initial;
           // The anchor<->newcomer pair is already covered by `initial`
           // above (as a direct sibling link, or implicitly through shared
           // parentage) -- only the OTHER pairs planSiblingMerge implies are
@@ -312,7 +317,15 @@ export default function App() {
         // too. planSiblingMerge works out every pair that implies, so the
         // whole merge lands in one commit — one undo for the group, not
         // one per pair.
-        const { pairs, impliedCount, skipped } = planSiblingMerge(aId, bId, details.type, relationships);
+        const { pairs, impliedCount, skipped, blocked } = planSiblingMerge(aId, bId, details.type, relationships);
+        // Belt-and-braces: validateRelationship above already rules this
+        // out today, but planSiblingMerge checks the explicit pair on its
+        // own too now, so a future change to the check above can't quietly
+        // let a contradictory sibling link through here.
+        if (blocked) {
+          setLinkModal((m) => ({ ...m, error: blocked }));
+          return;
+        }
         tree.addRelationshipBatch(pairs);
         setLinkModal(CLOSED_LINK);
         tree.clearSelection();
