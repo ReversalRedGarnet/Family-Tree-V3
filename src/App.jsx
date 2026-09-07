@@ -740,7 +740,9 @@ export default function App() {
           selectedIds={selectedIds}
           memo={exportMemo}
           onSelect={tree.select}
+          onSelectMany={tree.selectMany}
           onMovePerson={tree.movePerson}
+          onMoveMany={tree.moveMany}
           onEditPerson={openEditPerson}
           onPersonContextMenu={handlePersonMenu}
           onCanvasContextMenu={handleBoardMenu}

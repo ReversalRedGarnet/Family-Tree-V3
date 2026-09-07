@@ -75,6 +75,10 @@ export function useFamilyTree() {
 
   const clearSelection = useCallback(() => setSelectedIds([]), []);
 
+  // Replaces the whole selection at once — the marquee (drag-box) gesture,
+  // which has no notion of "additive" the way a shift-click does.
+  const selectMany = useCallback((ids) => setSelectedIds([...new Set(ids)]), []);
+
   // ---------- People ----------
 
   // Adds a person and every link they arrive with in ONE step, so the new
@@ -159,6 +163,27 @@ export function useFamilyTree() {
             ...g,
             people: { ...g.people, [id]: { ...g.people[id], placed: true, position: { x, y } } },
           };
+        },
+        { layout: false }
+      );
+    },
+    [commit]
+  );
+
+  // Dragging one card out of a multi-selection moves the whole group —
+  // everyone's relative positions stay exactly as they were, and it's a
+  // single undo step, not one per person.
+  const moveMany = useCallback(
+    (positionsById) => {
+      commit(
+        (g) => {
+          const entries = Object.entries(positionsById).filter(([id]) => g.people[id]);
+          if (!entries.length) return g;
+          const people2 = { ...g.people };
+          entries.forEach(([id, pos]) => {
+            people2[id] = { ...people2[id], placed: true, position: { x: pos.x, y: pos.y } };
+          });
+          return { ...g, people: people2 };
         },
         { layout: false }
       );
@@ -364,11 +389,13 @@ export function useFamilyTree() {
     generation,
     conflicts,
     select,
+    selectMany,
     clearSelection,
     addRelative,
     updatePerson,
     deletePerson,
     movePerson,
+    moveMany,
     addRelationship,
     addRelationshipBatch,
     addParentLinks,

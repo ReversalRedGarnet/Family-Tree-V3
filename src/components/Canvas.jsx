@@ -80,7 +80,9 @@ const Canvas = forwardRef(function Canvas(
     selectedIds,
     memo,
     onSelect,
+    onSelectMany,
     onMovePerson,
+    onMoveMany,
     onEditPerson,
     onPersonContextMenu,
     onCanvasContextMenu,
@@ -96,14 +98,71 @@ const Canvas = forwardRef(function Canvas(
   const containerRef = useRef(null);
   const stageRef = useRef(null);
   const pinchRef = useRef(null);
+  // Every rendered card's underlying Konva node, keyed by person id — so a
+  // multi-selection drag can move the OTHER selected cards directly during
+  // the gesture (see handleDragMove/handleDragEnd) without going through
+  // React state on every pointer move.
+  const nodeRefs = useRef({});
+  // Mouse-only pan (middle-button, or space+left-button, on empty canvas)
+  // and touch pan (single finger) both go through this: the client point
+  // and view offset the gesture started from. Konva's own `draggable` used
+  // to do this for us, but plain left-drag on empty canvas is now the
+  // marquee gesture below, so panning is done by hand instead.
+  const panRef = useRef(null);
+  // A candidate marquee: set on mousedown over empty canvas, promoted to an
+  // actual visible rectangle (marqueeRect state) only once the pointer has
+  // moved past a small threshold — so a plain click still reads as a click.
+  const marqueeStartRef = useRef(null);
+  const marqueeActiveRef = useRef(false);
+  const marqueeRectRef = useRef(null);
+  // Set for the duration of a drag that moves a whole multi-selection: the
+  // card actually being dragged, its position when the drag started, and
+  // the same for every other selected card, so the group can be shifted by
+  // exactly the anchor's own delta and committed as one move.
+  const groupDragRef = useRef(null);
+  const spaceRef = useRef(false);
 
   const [size, setSize] = useState({ width: 1000, height: 700 });
   const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
   const [hoverTargetId, setHoverTargetId] = useState(null);
   const [hoverConnectorKey, setHoverConnectorKey] = useState(null);
   const [touchDrag, setTouchDrag] = useState(false);
+  const [marqueeRect, setMarqueeRect] = useState(null);
+  const [spaceHeld, setSpaceHeld] = useState(false);
 
   useImperativeHandle(ref, () => stageRef.current, []);
+
+  // `view` read from inside stable (empty-deps) window-level listeners
+  // below — a ref mirror avoids those closing over a stale value.
+  const viewRef = useRef(view);
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+
+  // Holding Space pans by dragging with the primary mouse button — the
+  // usual escape hatch (Figma, Miro, Photoshop) now that plain left-drag on
+  // empty canvas draws a marquee instead of panning the board.
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.code !== 'Space' || e.repeat) return;
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
+      e.preventDefault();
+      spaceRef.current = true;
+      setSpaceHeld(true);
+    };
+    const onKeyUp = (e) => {
+      if (e.code !== 'Space') return;
+      spaceRef.current = false;
+      setSpaceHeld(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, []);
 
   // Konva paints text to a bitmap, so it won't pick up Proxima Nova on its
   // own once the webfont lands. Force one redraw when fonts settle.
@@ -182,37 +241,220 @@ const Canvas = forwardRef(function Canvas(
     [zoomAround]
   );
 
-  // Two-finger pinch. Konva doesn't give us this for free.
-  const handleTouchMove = useCallback((e) => {
-    const touches = e.evt.touches;
-    if (touches.length !== 2) return;
-    e.evt.preventDefault();
-    const stage = stageRef.current;
-    if (!stage) return;
+  // Touch panning and pinch-zoom used to ride on Konva's own `draggable`
+  // Stage, but that also has to be off now (plain left-drag on empty canvas
+  // is the marquee gesture, mouse-side — see below), so both are done by
+  // hand here. A single finger on empty canvas pans; a second finger
+  // arriving kills that pan outright (stopDrag alone isn't enough once the
+  // Stage isn't Konva-draggable any more, but panRef itself needs clearing
+  // too, or the dropped-to-one-finger branch below would think a pan was
+  // already in flight) and starts a pinch instead, so the two gestures
+  // never fight over the same touch's movement.
+  const handleTouchStart = useCallback(
+    (e) => {
+      const touches = e.evt.touches;
+      if (touches.length >= 2) {
+        panRef.current = null;
+        const [t1, t2] = touches;
+        pinchRef.current = { dist: distance(t1, t2) };
+        return;
+      }
+      if (touches.length === 1 && e.target === e.target.getStage()) {
+        const t = touches[0];
+        panRef.current = {
+          startClientX: t.clientX,
+          startClientY: t.clientY,
+          startX: viewRef.current.x,
+          startY: viewRef.current.y,
+        };
+      }
+    },
+    []
+  );
 
-    const [t1, t2] = touches;
-    const dist = distance(t1, t2);
-    const box = stage.container().getBoundingClientRect();
-    const centre = {
-      x: (t1.clientX + t2.clientX) / 2 - box.left,
-      y: (t1.clientY + t2.clientY) / 2 - box.top,
-    };
+  const handleTouchMove = useCallback(
+    (e) => {
+      const touches = e.evt.touches;
 
-    if (pinchRef.current) {
-      const factor = dist / pinchRef.current.dist;
-      setView((v) => {
-        const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, v.scale * factor));
-        const worldX = (centre.x - v.x) / v.scale;
-        const worldY = (centre.y - v.y) / v.scale;
-        return { scale, x: centre.x - worldX * scale, y: centre.y - worldY * scale };
-      });
+      if (touches.length >= 2) {
+        e.evt.preventDefault();
+        const stage = stageRef.current;
+        if (!stage) return;
+        const [t1, t2] = touches;
+        const dist = distance(t1, t2);
+        const box = stage.container().getBoundingClientRect();
+        const centre = {
+          x: (t1.clientX + t2.clientX) / 2 - box.left,
+          y: (t1.clientY + t2.clientY) / 2 - box.top,
+        };
+        // The same clamp-and-recentre math as a wheel zoom or the +/-
+        // buttons — pinch is just another way of asking for it, centred on
+        // the midpoint between the two fingers instead of the cursor.
+        if (pinchRef.current) zoomAround(dist / pinchRef.current.dist, centre.x, centre.y);
+        pinchRef.current = { dist };
+        return;
+      }
+
+      if (touches.length === 1 && panRef.current) {
+        e.evt.preventDefault();
+        const t = touches[0];
+        const stage = stageRef.current;
+        if (!stage) return;
+        stage.x(panRef.current.startX + (t.clientX - panRef.current.startClientX));
+        stage.y(panRef.current.startY + (t.clientY - panRef.current.startClientY));
+        stage.batchDraw();
+      }
+    },
+    [zoomAround]
+  );
+
+  const handleTouchEnd = useCallback((e) => {
+    const remaining = e.evt.touches;
+
+    if (remaining.length === 0) {
+      pinchRef.current = null;
+      const stage = stageRef.current;
+      if (panRef.current && stage) setView((v) => ({ ...v, x: stage.x(), y: stage.y() }));
+      panRef.current = null;
+      return;
     }
-    pinchRef.current = { dist };
+
+    if (remaining.length === 1) {
+      // Down from two fingers to one: hand off from pinch to a fresh
+      // single-finger pan anchored at whichever finger is left, so panning
+      // carries on without a jump instead of just stopping.
+      pinchRef.current = null;
+      const stage = stageRef.current;
+      const t = remaining[0];
+      panRef.current = {
+        startClientX: t.clientX,
+        startClientY: t.clientY,
+        startX: stage ? stage.x() : viewRef.current.x,
+        startY: stage ? stage.y() : viewRef.current.y,
+      };
+    }
   }, []);
 
-  const handleTouchEnd = useCallback(() => {
-    pinchRef.current = null;
+  // ---- Mouse: pan (middle-button or space+drag) and marquee select ----
+
+  const handlePanMouseMove = useCallback((e) => {
+    const pan = panRef.current;
+    const stage = stageRef.current;
+    if (!pan || !stage) return;
+    stage.x(pan.startX + (e.clientX - pan.startClientX));
+    stage.y(pan.startY + (e.clientY - pan.startClientY));
+    stage.batchDraw();
   }, []);
+
+  const handlePanMouseUp = useCallback((e) => {
+    const pan = panRef.current;
+    panRef.current = null;
+    window.removeEventListener('mousemove', handlePanMouseMove);
+    window.removeEventListener('mouseup', handlePanMouseUp);
+    if (!pan) return;
+    setView((v) => ({
+      ...v,
+      x: pan.startX + (e.clientX - pan.startClientX),
+      y: pan.startY + (e.clientY - pan.startClientY),
+    }));
+  }, [handlePanMouseMove]);
+
+  // How far the pointer has to move from mousedown before a candidate
+  // marquee actually shows up and starts selecting — below this, it reads
+  // as a plain click (which Konva's own click handling already treats as
+  // "deselect everyone", the same as it always has).
+  const MARQUEE_THRESHOLD = 4;
+
+  const finishMarqueeSelection = useCallback(
+    (rect) => {
+      const left = Math.min(rect.x0, rect.x1);
+      const right = Math.max(rect.x0, rect.x1);
+      const top = Math.min(rect.y0, rect.y1);
+      const bottom = Math.max(rect.y0, rect.y1);
+      const ids = Object.entries(people)
+        .filter(([, person]) => {
+          const px = person.position?.x ?? 0;
+          const py = person.position?.y ?? 0;
+          return (
+            px - CARD_WIDTH / 2 <= right &&
+            px + CARD_WIDTH / 2 >= left &&
+            py - CARD_HEIGHT / 2 <= bottom &&
+            py + CARD_HEIGHT / 2 >= top
+          );
+        })
+        .map(([id]) => id);
+      onSelectMany(ids);
+    },
+    [people, onSelectMany]
+  );
+
+  const handleMarqueeMouseMove = useCallback((e) => {
+    const start = marqueeStartRef.current;
+    const box = containerRef.current?.getBoundingClientRect();
+    if (!start || !box) return;
+
+    if (!marqueeActiveRef.current) {
+      const moved = Math.hypot(e.clientX - start.clientX, e.clientY - start.clientY);
+      if (moved < MARQUEE_THRESHOLD) return;
+      marqueeActiveRef.current = true;
+    }
+
+    const v = viewRef.current;
+    const rect = {
+      x0: (start.clientX - box.left - v.x) / v.scale,
+      y0: (start.clientY - box.top - v.y) / v.scale,
+      x1: (e.clientX - box.left - v.x) / v.scale,
+      y1: (e.clientY - box.top - v.y) / v.scale,
+    };
+    marqueeRectRef.current = rect;
+    setMarqueeRect(rect);
+  }, []);
+
+  const handleMarqueeMouseUp = useCallback(() => {
+    window.removeEventListener('mousemove', handleMarqueeMouseMove);
+    window.removeEventListener('mouseup', handleMarqueeMouseUp);
+    marqueeStartRef.current = null;
+    if (!marqueeActiveRef.current) return;
+    marqueeActiveRef.current = false;
+    // Read the last rect from the ref rather than a setState functional
+    // updater — calling another component's setState (onSelectMany, which
+    // ultimately updates App's selection state) from inside a React state
+    // updater runs during React's render work and trips its "cannot update
+    // a component while rendering a different one" guard. A plain event
+    // handler doing the same thing is exactly what event handlers are for.
+    const rect = marqueeRectRef.current;
+    marqueeRectRef.current = null;
+    setMarqueeRect(null);
+    if (rect) finishMarqueeSelection(rect);
+  }, [finishMarqueeSelection]);
+
+  const handleStageMouseDown = useCallback(
+    (e) => {
+      // A card's own drag/click handles itself; this is only for gestures
+      // that start on the empty board.
+      if (e.target !== e.target.getStage()) return;
+
+      if (e.evt.button === 1 || (e.evt.button === 0 && spaceRef.current)) {
+        e.evt.preventDefault();
+        panRef.current = {
+          startClientX: e.evt.clientX,
+          startClientY: e.evt.clientY,
+          startX: viewRef.current.x,
+          startY: viewRef.current.y,
+        };
+        window.addEventListener('mousemove', handlePanMouseMove);
+        window.addEventListener('mouseup', handlePanMouseUp);
+        return;
+      }
+
+      if (e.evt.button !== 0) return;
+      marqueeStartRef.current = { clientX: e.evt.clientX, clientY: e.evt.clientY };
+      marqueeActiveRef.current = false;
+      window.addEventListener('mousemove', handleMarqueeMouseMove);
+      window.addEventListener('mouseup', handleMarqueeMouseUp);
+    },
+    [handlePanMouseMove, handlePanMouseUp, handleMarqueeMouseMove, handleMarqueeMouseUp]
+  );
 
   // ---- Drag to connect ----
 
@@ -256,12 +498,49 @@ const Canvas = forwardRef(function Canvas(
     [findOverlapTarget, connectors, touchDrag]
   );
 
-  const handleDragStart = useCallback((personId, e) => {
-    setTouchDrag(isTouchEvent(e?.evt));
-  }, []);
+  // Dragging one card out of a multi-selection (more than one person
+  // selected, and this card is one of them) moves the whole group instead
+  // of just this card — captured once, at drag start, as the anchor's own
+  // position plus everyone else's, so a move mid-drag is just "the anchor's
+  // delta so far" applied to each of them.
+  const handleDragStart = useCallback(
+    (personId, e) => {
+      setTouchDrag(isTouchEvent(e?.evt));
+      if (selectedIds.length > 1 && selectedIds.includes(personId)) {
+        const anchor = people[personId]?.position;
+        groupDragRef.current = {
+          anchorId: personId,
+          anchorStart: { x: anchor?.x ?? 0, y: anchor?.y ?? 0 },
+          others: selectedIds
+            .filter((id) => id !== personId)
+            .map((id) => ({ id, x: people[id]?.position?.x ?? 0, y: people[id]?.position?.y ?? 0 })),
+        };
+      } else {
+        groupDragRef.current = null;
+      }
+    },
+    [selectedIds, people]
+  );
 
   const handleDragMove = useCallback(
     (personId, x, y) => {
+      const group = groupDragRef.current;
+      if (group && group.anchorId === personId) {
+        // The other selected cards are moved directly through their Konva
+        // nodes, not through React state — exactly like the anchor card
+        // itself, which Konva is already moving natively. Going through
+        // `people`/setState here instead would mean committing a history
+        // entry on every pointer move.
+        const dx = x - group.anchorStart.x;
+        const dy = y - group.anchorStart.y;
+        group.others.forEach((o) => {
+          const node = nodeRefs.current[o.id];
+          if (node) node.position({ x: o.x + dx, y: o.y + dy });
+        });
+        stageRef.current?.batchDraw();
+        return;
+      }
+
       const drop = findDropTarget(personId, x, y);
       const nextPerson = drop?.kind === 'person' ? drop.personId : null;
       const nextConnector = drop?.kind === 'connector' ? drop.connector.key : null;
@@ -273,6 +552,20 @@ const Canvas = forwardRef(function Canvas(
 
   const handleDragEnd = useCallback(
     (personId, x, y, node) => {
+      const group = groupDragRef.current;
+      if (group && group.anchorId === personId) {
+        groupDragRef.current = null;
+        setTouchDrag(false);
+        const dx = x - group.anchorStart.x;
+        const dy = y - group.anchorStart.y;
+        const updates = { [personId]: { x, y } };
+        group.others.forEach((o) => {
+          updates[o.id] = { x: o.x + dx, y: o.y + dy };
+        });
+        onMoveMany(updates);
+        return;
+      }
+
       setHoverTargetId(null);
       setHoverConnectorKey(null);
       setTouchDrag(false);
@@ -297,7 +590,7 @@ const Canvas = forwardRef(function Canvas(
 
       onMovePerson(personId, x, y);
     },
-    [findDropTarget, people, onDropOverlap, onDropOnConnector, onMovePerson]
+    [findDropTarget, people, onDropOverlap, onDropOnConnector, onMovePerson, onMoveMany]
   );
 
   // ---- Stage-level events ----
@@ -308,12 +601,6 @@ const Canvas = forwardRef(function Canvas(
     },
     [onSelect]
   );
-
-  const handleStageDragEnd = useCallback((e) => {
-    // Card drags bubble up here too; only react to the board itself moving.
-    if (e.target !== e.target.getStage()) return;
-    setView((v) => ({ ...v, x: e.target.x(), y: e.target.y() }));
-  }, []);
 
   const handleContextMenu = useCallback(
     (e) => {
@@ -350,7 +637,11 @@ const Canvas = forwardRef(function Canvas(
   }, [touchDrag, hoverTargetId, hoverConnectorKey, people, connectors]);
 
   return (
-    <div ref={containerRef} className="board-surface relative h-full w-full touch-none overflow-hidden">
+    <div
+      ref={containerRef}
+      className="board-surface relative h-full w-full touch-none overflow-hidden"
+      style={spaceHeld ? { cursor: 'grab' } : undefined}
+    >
       <Stage
         ref={stageRef}
         width={size.width}
@@ -359,12 +650,12 @@ const Canvas = forwardRef(function Canvas(
         y={view.y}
         scaleX={view.scale}
         scaleY={view.scale}
-        draggable
-        onDragEnd={handleStageDragEnd}
+        onMouseDown={handleStageMouseDown}
         onClick={handleStageClick}
         onTap={handleStageClick}
         onContextMenu={handleContextMenu}
         onWheel={handleWheel}
+        onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
@@ -396,6 +687,10 @@ const Canvas = forwardRef(function Canvas(
               selected={selectedIds.includes(id)}
               highlighted={hoverTargetId === id}
               conflicted={Boolean(conflicts?.has?.(id))}
+              registerRef={(node) => {
+                if (node) nodeRefs.current[id] = node;
+                else delete nodeRefs.current[id];
+              }}
               onDragStart={handleDragStart}
               onDragMove={handleDragMove}
               onDragEnd={handleDragEnd}
@@ -415,6 +710,20 @@ const Canvas = forwardRef(function Canvas(
               exportTheme={exportTheme}
             />
           ))}
+
+          {marqueeRect && (
+            <Rect
+              x={Math.min(marqueeRect.x0, marqueeRect.x1)}
+              y={Math.min(marqueeRect.y0, marqueeRect.y1)}
+              width={Math.abs(marqueeRect.x1 - marqueeRect.x0)}
+              height={Math.abs(marqueeRect.y1 - marqueeRect.y0)}
+              fill="rgba(14,165,183,0.12)"
+              stroke="#0EA5B7"
+              strokeWidth={1.5 / view.scale}
+              dash={[6 / view.scale, 4 / view.scale]}
+              listening={false}
+            />
+          )}
 
           {memo && (
             <Text

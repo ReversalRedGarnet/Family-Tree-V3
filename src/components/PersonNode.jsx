@@ -38,6 +38,7 @@ export default function PersonNode({
   selected,
   highlighted,
   conflicted,
+  registerRef,
   onDragStart,
   onDragMove,
   onDragEnd,
@@ -95,6 +96,7 @@ export default function PersonNode({
 
   return (
     <Group
+      ref={registerRef}
       x={x}
       y={y}
       draggable
