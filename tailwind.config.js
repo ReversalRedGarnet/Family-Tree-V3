@@ -15,7 +15,9 @@ export default {
           wash: '#E4F5F7',
           soft: '#7FD3DD',
         },
-        rose: '#E86A6A',
+        // 5.7:1 against white -- clears WCAG AA's 4.5:1 text minimum with
+        // real margin (the previous #E86A6A only reached 3.13:1).
+        rose: '#B83A3A',
         slate: {
           quiet: '#7A9299',    // deceased / sibling lines
         },

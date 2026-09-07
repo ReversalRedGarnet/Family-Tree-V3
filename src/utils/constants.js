@@ -111,7 +111,14 @@ export const LINE_STYLES = {
   // marker at 'none'). A muted colour rather than a new dash pattern or
   // marker keeps a half/step/adopted arch reading as "still a sibling
   // link" at a glance, not a visually unrelated relationship.
-  siblingSoft: { color: '#A8BEC4', width: 2,  dash: [2, 5],   marker: 'none',        label: 'Siblings (half / step / adopted)' },
+  //
+  // A deliberately different hue from `sibling`'s blue-grey, not just a
+  // lighter/darker version of it: #A8BEC4 (the original) only reached
+  // 1.85:1 against the board (fails the 3:1 non-text minimum) and 1.69:1
+  // against `sibling` itself (the two were barely distinguishable, for
+  // anyone, not only colour-blind readers). This muted indigo clears
+  // 12:1 against the board and 3.9:1 against `sibling`.
+  siblingSoft: { color: '#332F4D', width: 2,  dash: [2, 5],   marker: 'none',        label: 'Siblings (half / step / adopted)' },
   other:      { color: '#A8BEC4', width: 1.75, dash: [1, 5],  marker: 'none',        label: 'Other link' },
 };
 

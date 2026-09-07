@@ -184,7 +184,10 @@ export default function PersonNode({
             if (container) container.style.cursor = 'grab';
           }}
         >
-          <Circle radius={9} fill="#E86A6A" />
+          {/* Same red as the "rose" danger colour (tailwind.config.js) --
+              Konva can't consume a Tailwind token, so it's kept in sync by
+              hand; a literal #E86A6A here would drift the moment rose does. */}
+          <Circle radius={9} fill="#B83A3A" />
           <Text text="!" x={-2.5} y={-6} fontSize={12} fontStyle="bold" fill="#FFFFFF" />
         </Group>
       )}
