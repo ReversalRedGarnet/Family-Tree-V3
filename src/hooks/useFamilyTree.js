@@ -4,6 +4,7 @@ import { computeGenerations } from '../utils/generations';
 import { autoLayout, reflowAll, rowY } from '../utils/layout';
 import { generateId } from '../utils/id';
 import { loadGraph, clearSavedGraph } from '../utils/storage';
+import { applyCommit } from '../utils/history';
 
 const EMPTY_GRAPH = { people: {}, relationships: {} };
 
@@ -45,15 +46,12 @@ export function useFamilyTree() {
     [people, relationships]
   );
 
-  const commit = useCallback((producer, { layout = true, hint = null } = {}) => {
+  const commit = useCallback((producer, { layout = true, hint = null, history = true } = {}) => {
     setHistory((h) => {
       const next = producer(h.present);
       if (!next || next === h.present) return h;
-      return {
-        past: [...h.past, h.present].slice(-MAX_HISTORY),
-        present: layout ? autoLayout(next, hint) : next,
-        future: [],
-      };
+      const present = layout ? autoLayout(next, hint) : next;
+      return applyCommit(h, present, { history });
     });
   }, []);
 
@@ -258,23 +256,33 @@ export function useFamilyTree() {
   // ---------- Layout / history ----------
 
   // Swaps in a whole different graph in one step — the "load from Drive"
-  // case, where nothing about the current board carries over. One commit,
-  // one undo back to whatever was here before, exactly like any other
-  // change. Positions are trusted as saved and NOT relaid-out, matching
-  // the initial local-storage bootstrap above (`loadGraph()` at hook
-  // init, which also goes straight into state with no autoLayout pass) —
-  // a Drive-loaded tree should behave exactly like a locally-loaded one,
-  // not get a surprise relayout the local path never gets. If anything
-  // actually collides, Tidy rows (or the next ordinary edit) resolves it,
-  // same as it always would for a tree opened from an older save.
+  // case, where nothing about the current board carries over. Positions are
+  // trusted as saved and NOT relaid-out, matching the initial local-storage
+  // bootstrap above (`loadGraph()` at hook init, which also goes straight
+  // into state with no autoLayout pass) — a Drive-loaded tree should behave
+  // exactly like a locally-loaded one, not get a surprise relayout the
+  // local path never gets. If anything actually collides, Tidy rows (or the
+  // next ordinary edit) resolves it, same as it always would for a tree
+  // opened from an older save.
+  //
+  // `history: false` is for a SILENT load only — Drive's sign-in handshake
+  // pulling down a tree because this device had nothing to lose, with no
+  // choice the person actually made. That shouldn't become an undo step: an
+  // undo that reaches back through it would immediately re-trigger the
+  // autosync push and silently overwrite what was just pulled down, over
+  // something the user never did. The explicit conflict-resolution case
+  // (the person picked "keep this device" or "use Drive's version") keeps
+  // the default — one commit, one undo back to whatever was here before —
+  // exactly like any other change, matching the README's "Undo reaches
+  // back through that choice" claim.
   const replaceGraph = useCallback(
-    (graph) => {
+    (graph, { history = true } = {}) => {
       commit(
         () => ({
           people: (graph && graph.people) || {},
           relationships: (graph && graph.relationships) || {},
         }),
-        { layout: false }
+        { layout: false, history }
       );
       setSelectedIds([]);
     },

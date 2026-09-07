@@ -142,7 +142,10 @@ export function useDriveSync({ people, relationships, replaceGraph, pushToast })
 
       if (action === 'download') {
         const payload = await downloadAppDataFile(token, remote.id);
-        replaceGraph(payload);
+        // Silent: nothing on this device to lose, no choice the person
+        // actually made, so this must not become an undo step -- see the
+        // comment on replaceGraph in useFamilyTree.js.
+        replaceGraph(payload, { history: false });
         const syncedAt = remote.modifiedTime;
         setLastSyncedAt(syncedAt);
         writeFlags({ signedIn: true, fileId: remote.id, lastSyncedAt: syncedAt });
