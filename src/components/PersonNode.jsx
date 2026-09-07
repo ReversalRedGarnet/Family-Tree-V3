@@ -71,6 +71,19 @@ export default function PersonNode({
     shadowOffsetY: 3,
     shadowOpacity: gone ? 0.5 : 1,
     lineJoin: 'round',
+    // Konva's default (true) redraws a shape TWICE through an offscreen
+    // buffer whenever it has both a shadow and a fill+stroke together, to
+    // avoid the shadow doubling up under the stroke -- a correctness
+    // guarantee this card never needed (the shadow only ever needs to look
+    // roughly right, not pixel-perfect), and one that made every card on
+    // the board redraw itself twice on every repaint. Measured directly:
+    // with the default left on, a 150-person board took ~44s to become
+    // interactive after load and ~5-6s per drag-move event; with it off,
+    // ~1.9s to load and ~60ms per drag-move event -- this one flag was the
+    // entire difference, not the per-frame hit-test scan or the lack of
+    // memoisation on this component (both measured separately and found
+    // negligible by comparison).
+    perfectDrawEnabled: false,
   };
 
   // Both shapes are full-bleed (neither tapers like the old triangle did),
