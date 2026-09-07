@@ -111,6 +111,13 @@ export function parentsOf(personId, relationships) {
     .map((rel) => rel.a);
 }
 
+// The children of a person (as their parent), in insertion order.
+export function childrenOf(personId, relationships) {
+  return Object.values(relationships)
+    .filter((rel) => rel.kind === 'parent' && rel.a === personId)
+    .map((rel) => rel.b);
+}
+
 export function partnersOf(personId, relationships) {
   return Object.values(relationships)
     .filter((rel) => rel.kind === 'partner' && (rel.a === personId || rel.b === personId))
@@ -132,6 +139,48 @@ export function activePartnersOf(personId, relationships) {
         (!rel.status || rel.status === 'together')
     )
     .map((rel) => (rel.a === personId ? rel.b : rel.a));
+}
+
+// When A and B become partners, either one may already have a child on
+// record from before this relationship existed -- a blended family. That
+// child might also belong to the new partner, or might not (a step-parent
+// isn't automatically a parent); this only ever surfaces candidates to ASK
+// about, one plain yes/no per child, the same way "Add Child" refuses to
+// guess a second parent it isn't sure about rather than assuming one.
+//
+// Returns one entry per child who has exactly one of the two as a recorded
+// parent — `existingParentId` is the one already linked, `candidateParentId`
+// is the one being asked about. A child already linked to both, or to
+// neither, has nothing to ask.
+export function findUnlinkedPartnerChildren(aId, bId, relationships) {
+  const aChildren = new Set(childrenOf(aId, relationships));
+  const bChildren = new Set(childrenOf(bId, relationships));
+  const candidates = [];
+
+  aChildren.forEach((childId) => {
+    if (childId !== bId && !bChildren.has(childId)) {
+      candidates.push({ childId, existingParentId: aId, candidateParentId: bId });
+    }
+  });
+  bChildren.forEach((childId) => {
+    if (childId !== aId && !aChildren.has(childId)) {
+      candidates.push({ childId, existingParentId: bId, candidateParentId: aId });
+    }
+  });
+
+  return candidates;
+}
+
+// The relationships to actually write once every "also their child?"
+// question has been answered — one `parent` link per accepted candidate,
+// in the right direction (the candidate parent becomes `a`, the child
+// stays `b`). Pure on purpose, same as planSiblingMerge below: the part
+// worth getting right here is that N accepted answers become exactly N
+// relationships in the one batch that gets committed, not N separate
+// commits and not an off-by-one from however the yes/no queue was walked
+// to get here.
+export function partnerChildLinksToWrite(accepted) {
+  return accepted.map((c) => ({ kind: 'parent', a: c.candidateParentId, b: c.childId }));
 }
 
 // Works out what kind of siblings two people are from the parents already on

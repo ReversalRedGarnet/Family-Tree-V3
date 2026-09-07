@@ -18,7 +18,14 @@ import {
   collectTreeWarnings,
   findDuplicatePerson,
 } from './utils/validation';
-import { parentsOf, activePartnersOf, planSiblingMerge, inferSiblingType } from './utils/generations';
+import {
+  parentsOf,
+  activePartnersOf,
+  planSiblingMerge,
+  inferSiblingType,
+  findUnlinkedPartnerChildren,
+  partnerChildLinksToWrite,
+} from './utils/generations';
 import { exportAsPng, exportAsPdf } from './utils/exportTree';
 import { saveGraph } from './utils/storage';
 import { MOBILE_BREAKPOINT, exportThemeFor } from './utils/constants';
@@ -316,6 +323,45 @@ export default function App() {
     [pushToast, isMobile]
   );
 
+  // Runs down a queue of "is this also their child?" questions one at a
+  // time, through the same single confirm-dialog slot every other yes/no
+  // in this app already uses (Drive's conflict prompt, every delete
+  // confirmation) -- never combined into one question, since a blended
+  // family's children don't all have the same answer, and a wrong guess
+  // here writes a false parent-child fact. Every accepted answer is
+  // collected and written in ONE commit only once the whole queue is
+  // empty, the same batching planSiblingMerge and addParentLinks already
+  // use: one undo step for the group, not one per child.
+  const askAboutSharedChildren = useCallback(
+    (queue, accepted) => {
+      if (!queue.length) {
+        if (accepted.length) {
+          tree.addRelationshipBatch(partnerChildLinksToWrite(accepted));
+          pushToast(
+            accepted.length === 1
+              ? `${nameOf(accepted[0].childId)} is now also ${nameOf(accepted[0].candidateParentId)}'s child.`
+              : `${accepted.length} additional parent-child links added.`,
+            'success',
+            4000
+          );
+        }
+        setConfirmState(null);
+        return;
+      }
+
+      const [current, ...rest] = queue;
+      setConfirmState({
+        title: 'Also their child?',
+        message: `Is ${nameOf(current.childId)} also ${nameOf(current.candidateParentId)}'s child?`,
+        confirmLabel: 'Yes',
+        cancelLabel: 'No',
+        onConfirm: () => askAboutSharedChildren(rest, [...accepted, current]),
+        onCancel: () => askAboutSharedChildren(rest, accepted),
+      });
+    },
+    [tree, pushToast, nameOf]
+  );
+
   const handleLinkConfirm = useCallback(
     (kind, aId, bId, details, deceasedId) => {
       const check = validateRelationship(kind, aId, bId, people, relationships);
@@ -365,8 +411,20 @@ export default function App() {
       setLinkModal(CLOSED_LINK);
       tree.clearSelection();
       pushToast('Linked. The line style shows what kind — see the key in the panel.', 'success', 4000);
+
+      if (kind === 'partner') {
+        // A blended family: either partner may already have a child on
+        // record from before this relationship existed. Never assumed --
+        // see askAboutSharedChildren above. Uses the pre-commit
+        // `relationships` on purpose: the partner link just written above
+        // doesn't change who anyone's existing children are, so planning
+        // against the snapshot from before it landed is exactly right,
+        // the same way planSiblingMerge plans its merge above.
+        const candidates = findUnlinkedPartnerChildren(aId, bId, relationships);
+        if (candidates.length) askAboutSharedChildren(candidates, []);
+      }
     },
-    [people, relationships, tree, pushToast, nameOf]
+    [people, relationships, tree, pushToast, nameOf, askAboutSharedChildren]
   );
 
   // Dropping a card onto a parent line or a couple's line adopts the person
@@ -740,8 +798,16 @@ export default function App() {
         message={confirmState?.message}
         danger={confirmState?.danger}
         confirmLabel={confirmState?.confirmLabel}
+        cancelLabel={confirmState?.cancelLabel}
         onConfirm={() => confirmState?.onConfirm()}
-        onCancel={() => setConfirmState(null)}
+        // A confirmState with its own onCancel (the Drive conflict prompt's
+        // "keep this device" branch, and the shared-child questions below)
+        // needs that logic to actually run when the dialog is dismissed --
+        // this used to always just close the dialog regardless, silently
+        // skipping whatever onCancel was supposed to do. Falls back to a
+        // plain close for every confirmation that never needed more than
+        // that (delete, reset, duplicate-person, drag-adopt).
+        onCancel={() => (confirmState?.onCancel ? confirmState.onCancel() : setConfirmState(null))}
       />
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
