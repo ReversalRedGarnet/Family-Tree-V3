@@ -31,11 +31,19 @@ function blankPerson(id, data = {}) {
 }
 
 export function useFamilyTree() {
-  const [history, setHistory] = useState(() => ({
-    past: [],
-    present: loadGraph() || EMPTY_GRAPH,
-    future: [],
-  }));
+  const [history, setHistory] = useState(() => {
+    const loaded = loadGraph();
+    return {
+      past: [],
+      present: loaded ? { people: loaded.people, relationships: loaded.relationships } : EMPTY_GRAPH,
+      future: [],
+    };
+  });
+  // How many relationships loadGraph() had to drop for pointing at a
+  // person that no longer exists (or never did) -- read once, at mount,
+  // purely so App.jsx can surface a one-time toast; it plays no further
+  // part in the graph itself.
+  const [loadRepairedCount] = useState(() => loadGraph()?.droppedCount || 0);
   const [selectedIds, setSelectedIds] = useState([]);
 
   const graph = history.present;
@@ -351,6 +359,7 @@ export function useFamilyTree() {
   return {
     people,
     relationships,
+    loadRepairedCount,
     selectedIds,
     generation,
     conflicts,

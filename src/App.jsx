@@ -46,7 +46,7 @@ export default function App() {
   const [confirmState, setConfirmState] = useState(null);
   const [contextMenu, setContextMenu] = useState(CLOSED_MENU);
 
-  const { people, relationships, selectedIds, generation, conflicts } = tree;
+  const { people, relationships, loadRepairedCount, selectedIds, generation, conflicts } = tree;
   const drive = useDriveSync({
     people,
     relationships,
@@ -91,6 +91,19 @@ export default function App() {
   useEffect(() => {
     setSidebarOpen(!isMobile);
   }, [isMobile]);
+
+  // loadRepairedCount is fixed at mount (it reflects a one-time repair
+  // loadGraph() already did while loading), so this fires exactly once per
+  // page load, never on subsequent edits -- a browser crash mid-write, a
+  // bug elsewhere, or someone poking at localStorage by hand can all leave
+  // a relationship pointing at a person that's gone; loadGraph() drops
+  // those before they ever reach the app, this just says so.
+  useEffect(() => {
+    if (loadRepairedCount > 0) {
+      pushToast("Some data couldn't be loaded and was skipped.", 'warning', 6000);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Persisted to this browser only — no account, no sync elsewhere. Runs on
   // every structural change (add, delete, link, drag-end, etc.), not on

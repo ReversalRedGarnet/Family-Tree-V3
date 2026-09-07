@@ -20,6 +20,29 @@ function hasStorage() {
   }
 }
 
+// Drops any relationship whose `a` or `b` doesn't point at a person that
+// actually exists in `people`. The rest of the app already tolerates a
+// dangling reference gracefully wherever one gets READ (every consumer of
+// `relationships` guards on the people it points to actually being there —
+// connectors.js skips the line, generations.js skips the edge, the various
+// name-lookups fall back to "Someone"), but nothing repairs the underlying
+// data, so the rot would otherwise ride along forever, re-saved on every
+// autosave. A browser crash mid-write, a bug elsewhere, or someone poking
+// at localStorage by hand can all leave this behind — this is the one
+// place it's cleaned up, once, at load.
+function dropDanglingRelationships(people, relationships) {
+  const clean = {};
+  let droppedCount = 0;
+  Object.entries(relationships).forEach(([id, rel]) => {
+    if (rel && typeof rel === 'object' && people[rel.a] && people[rel.b]) {
+      clean[id] = rel;
+    } else {
+      droppedCount += 1;
+    }
+  });
+  return { relationships: clean, droppedCount };
+}
+
 export function loadGraph() {
   if (!hasStorage()) return null;
   try {
@@ -28,9 +51,10 @@ export function loadGraph() {
     const parsed = JSON.parse(raw);
     if (!parsed || parsed.version !== VERSION) return null;
     const people = parsed.people && typeof parsed.people === 'object' ? parsed.people : {};
-    const relationships =
+    const relationshipsRaw =
       parsed.relationships && typeof parsed.relationships === 'object' ? parsed.relationships : {};
-    return { people, relationships };
+    const { relationships, droppedCount } = dropDanglingRelationships(people, relationshipsRaw);
+    return { people, relationships, droppedCount };
   } catch {
     // Corrupted JSON, a tampered value, whatever — never let a bad save
     // stop the app from opening. It just opens empty, same as a first visit.
