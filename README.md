@@ -158,9 +158,17 @@ src/
     never assumed), the child is linked to both parents at once; otherwise
     just to this one.
   - *Add Sibling* works whether or not the person has listed parents yet —
-    with none on record it becomes a plain sibling link; the "kind of
-    sibling" field only pre-fills once there's enough on the board to
-    infer it, and can always be overridden.
+    with parents on record, the new person is linked to those same parents
+    (a stronger fact than a generic sibling tag); with none on record it
+    becomes a plain sibling link instead. This is a quick add, not the
+    "How are they related?" dialog, so there's no "kind of sibling" field
+    here to pre-fill — that picker only appears when linking two people who
+    already both exist (drag one card onto another, or select two and
+    "Link to…"). Either way, the new person is also merged into the whole
+    of the existing person's sibling group, exactly like a new link made
+    through that dialog would be — so a sibling who doesn't happen to share
+    the same recorded parents (a half sibling, say) still ends up linked to
+    the newcomer too, not silently skipped.
   - Each of these guards against the mistakes described below rather than
     silently doing nothing.
 - **Select / edit / move**: single click selects, double click edits,

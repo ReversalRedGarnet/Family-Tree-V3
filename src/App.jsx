@@ -18,7 +18,7 @@ import {
   collectTreeWarnings,
   findDuplicatePerson,
 } from './utils/validation';
-import { parentsOf, activePartnersOf, planSiblingMerge } from './utils/generations';
+import { parentsOf, activePartnersOf, planSiblingMerge, inferSiblingType } from './utils/generations';
 import { exportAsPng, exportAsPdf } from './utils/exportTree';
 import { saveGraph } from './utils/storage';
 import { MOBILE_BREAKPOINT, exportThemeFor } from './utils/constants';
@@ -212,10 +212,35 @@ export default function App() {
         opts = { anchorIds: [pending.childId] };
       } else if (pending.kind === 'sibling' && pending.siblingId) {
         const shared = parentsOf(pending.siblingId, relationships);
-        buildLinks = (id) =>
-          shared.length
+        buildLinks = (id) => {
+          // The anchor's own link to the newcomer: parent links to their
+          // shared parents when the anchor has any on record (the stronger,
+          // more informative fact), otherwise a plain sibling link.
+          const initial = shared.length
             ? shared.map((parentId) => ({ kind: 'parent', a: parentId, b: id }))
             : [{ kind: 'sibling', a: pending.siblingId, b: id }];
+
+          // Same transitive guarantee "Link two people" already gets from
+          // planSiblingMerge: the newcomer joins the anchor's WHOLE sibling
+          // group, not just the anchor. Without this, a newcomer linked to
+          // one sibling silently missed any other member of that group who
+          // doesn't happen to share the exact same parents (e.g. a half
+          // sibling) -- they'd end up with no relationship to the newcomer
+          // at all. `relationships` here is the board as it stood before
+          // this person existed, which is exactly right: the newcomer truly
+          // has no other links yet, however `initial` above ends up
+          // representing the anchor pair.
+          const anchorType = inferSiblingType(pending.siblingId, id, relationships)?.type || 'full';
+          const { pairs } = planSiblingMerge(pending.siblingId, id, anchorType, relationships);
+          // The anchor<->newcomer pair is already covered by `initial`
+          // above (as a direct sibling link, or implicitly through shared
+          // parentage) -- only the OTHER pairs planSiblingMerge implies are
+          // new here.
+          const implied = pairs.filter(
+            (p) => !((p.a === pending.siblingId || p.b === pending.siblingId) && (p.a === id || p.b === id))
+          );
+          return [...initial, ...implied];
+        };
         // Beside them. A spouse already sitting to the right sends the
         // sibling left, and vice versa, without either side being preferred.
         opts = { anchorIds: [pending.siblingId] };
