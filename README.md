@@ -1,8 +1,10 @@
 # Family Tree Editor (v1)
 
-A fun, single-session, browser-based whiteboard for building a family tree with
-friends. No accounts, no backend, nothing saved. Open it, build a tree, export
-a picture or PDF, close the tab.
+A fun, single-session, browser-based whiteboard for building a family tree
+with friends. No account required, no backend of ours, and nothing leaves
+your browser unless you export it or turn on the optional Google Drive sync
+described later in this file. By default: open it, build a tree, export a
+picture or PDF, close the tab.
 
 Visual theme: a soft off-white board in cyan and white. Cards are shaped by
 gender — a rectangle for male, a circle for female — and a small vocabulary of
@@ -348,15 +350,18 @@ pairs that affected, if any.
 - **Zoom** is clamped to a sane range so the board can't be scaled away to
   nothing or flipped.
 - A top-level **error boundary** catches any unexpected render crash and
-  offers a clean restart instead of a blank white screen — reasonable here
-  since nothing is saved between sessions anyway.
+  offers a clean restart instead of a blank white screen — low-stakes, since
+  a reload picks the tree right back up from the last autosave.
 - Old browsers without `crypto.randomUUID` fall back to a manual id
   generator so the app still works rather than throwing on startup.
 
 ## Deliberate v1 simplifications
 
-Matching the trimmed-down spec, these are intentionally out of scope:
-accounts/auth/collaboration, GEDCOM/CSV/XML import, and any export beyond
+Matching the trimmed-down spec, these are intentionally out of scope: a
+*required* account (the optional Google Drive sync below is sign-in, not a
+mandatory account, and still has no backend of this app's own), real-time
+collaboration (Drive sync's own "What this doesn't cover" section explains
+exactly where that line sits), GEDCOM/CSV/XML import, and any export beyond
 PNG/PDF. A few smaller simplifications worth knowing about:
 
 - "Add Child" attaches to a person's one *current* partner (status
