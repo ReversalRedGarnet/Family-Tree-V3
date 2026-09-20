@@ -215,14 +215,25 @@ does this card go".
 
 A card first works out where it would *like* to be — the midpoint of both
 its parents, directly above its child, beside its sibling, the spot you
-right-clicked, or the centre line if it has nothing to go on. From that
-slot the lattice is searched **outward**, and a tie at equal distance goes
-to whichever candidate is **nearer the centre line**. That last rule is
-what keeps the board from leaning: a row that has already spread one way
-gets filled back in from the inside rather than extended further out. On a
-dead heat (only possible for a card that wants the centre slot itself) the
-emptier half of the row wins, so repeated additions alternate sides —
-`0, -1, +1, -2, +2`.
+right-clicked, wherever the centre of your current view happens to be, or
+the board's fixed centre line as a last resort if none of that applies.
+From that slot the lattice is searched **outward**, and a tie at equal
+distance goes to whichever candidate is **nearer the centre line**. That
+last rule is what keeps the board from leaning: a row that has already
+spread one way gets filled back in from the inside rather than extended
+further out. On a dead heat (only possible for a card that wants the
+centre slot itself) the emptier half of the row wins, so repeated
+additions alternate sides — `0, -1, +1, -2, +2`.
+
+Adding a person with no anchor at all — the sidebar's "+ Add person", or
+the empty-board "Add the first person" prompt — targets wherever you're
+currently looking, not a fixed spot on the board: `viewportCenterWorldX`
+in `App.jsx` reads the pan/zoom straight off the Konva stage and converts
+screen-centre into the same world coordinates everything else on the
+board uses, using the exact conversion Canvas's own right-click "Add a
+person here" already relies on. `ORIGIN_X` only comes into play if the
+stage genuinely isn't mounted yet, which in practice shouldn't happen from
+a button click.
 
 Adding a card **never moves anyone already on the board**. The earlier
 build tried three fixed positions beside the anchor, claimed the right-hand

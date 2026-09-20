@@ -38,6 +38,23 @@ function nextPaint() {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
 
+// Same conversion Canvas.jsx's own right-click handler uses
+// (worldX = (screenX - view.x) / view.scale) — read straight off the
+// Konva stage node rather than threading pan/zoom state up as new props,
+// since the stage already carries its own x/scaleX. Returns null rather
+// than a guess when the stage isn't mounted yet, so callers can fall back
+// to the board's fixed centre line exactly as they did before.
+function viewportCenterWorldX(stage) {
+  if (!stage) return null;
+  const width = stage.width();
+  const scale = stage.scaleX();
+  const x = stage.x();
+  if (!Number.isFinite(width) || !Number.isFinite(scale) || !scale || !Number.isFinite(x)) {
+    return null;
+  }
+  return (width / 2 - x) / scale;
+}
+
 export default function App() {
   const tree = useFamilyTree();
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
@@ -684,7 +701,7 @@ export default function App() {
       isMobile={isMobile}
       onToggleCollapse={() => setSidebarOpen((v) => !v)}
       onSelect={tree.select}
-      onAddPerson={() => openAddPerson({ kind: 'root' })}
+      onAddPerson={() => openAddPerson({ kind: 'root', x: viewportCenterWorldX(stageRef.current) })}
       onEditPerson={openEditPerson}
       onLinkSelected={() => openLinkModal(selectedIds[0], selectedIds[1])}
       onRequestExport={() => setExportModal({ open: true, busy: false })}
@@ -749,7 +766,7 @@ export default function App() {
           onDropOverlap={(aId, bId) => openLinkModal(aId, bId, 'partner')}
           onDropOnConnector={handleDropOnConnector}
           onRelationshipClick={handleRelationshipClick}
-          onAddFirstPerson={() => openAddPerson({ kind: 'root' })}
+          onAddFirstPerson={() => openAddPerson({ kind: 'root', x: viewportCenterWorldX(stageRef.current) })}
           onConflictClick={handleConflictClick}
           exportTheme={activeExportTheme}
         />
