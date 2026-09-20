@@ -703,6 +703,7 @@ export default function App() {
       onSelect={tree.select}
       onAddPerson={() => openAddPerson({ kind: 'root', x: viewportCenterWorldX(stageRef.current) })}
       onEditPerson={openEditPerson}
+      onPersonMenu={handlePersonMenu}
       onLinkSelected={() => openLinkModal(selectedIds[0], selectedIds[1])}
       onRequestExport={() => setExportModal({ open: true, busy: false })}
       onUndo={tree.undo}

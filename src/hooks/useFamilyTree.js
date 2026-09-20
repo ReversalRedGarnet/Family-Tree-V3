@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { COLOR_THEMES, DEFAULT_GENDER, MAX_HISTORY, ORIGIN_X } from '../utils/constants';
 import { computeGenerations } from '../utils/generations';
 import { autoLayout, reflowAll, rowY } from '../utils/layout';
@@ -31,8 +31,16 @@ function blankPerson(id, data = {}) {
 }
 
 export function useFamilyTree() {
+  // Read once, at mount -- a ref rather than two separate lazy useState
+  // initializers, since loadGraph() itself does real work (a localStorage
+  // read, a JSON.parse, and a pass repairing dangling relationships) that
+  // history's own initializer and loadRepairedCount's both otherwise ran
+  // independently, duplicating all of it for no reason.
+  const loadedRef = useRef();
+  if (loadedRef.current === undefined) loadedRef.current = loadGraph();
+
   const [history, setHistory] = useState(() => {
-    const loaded = loadGraph();
+    const loaded = loadedRef.current;
     return {
       past: [],
       present: loaded ? { people: loaded.people, relationships: loaded.relationships } : EMPTY_GRAPH,
@@ -43,7 +51,7 @@ export function useFamilyTree() {
   // person that no longer exists (or never did) -- read once, at mount,
   // purely so App.jsx can surface a one-time toast; it plays no further
   // part in the graph itself.
-  const [loadRepairedCount] = useState(() => loadGraph()?.droppedCount || 0);
+  const [loadRepairedCount] = useState(() => loadedRef.current?.droppedCount || 0);
   const [selectedIds, setSelectedIds] = useState([]);
 
   const graph = history.present;

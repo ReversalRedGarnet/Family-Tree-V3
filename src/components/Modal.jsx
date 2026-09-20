@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 const SIZES = {
   sm: 'sm:max-w-sm',
@@ -6,21 +6,70 @@ const SIZES = {
   lg: 'sm:max-w-lg',
 };
 
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 // One shell for every dialog. On phones it's a bottom sheet that can't get
 // taller than the screen; on wider screens it's a centred card. Either way
 // the body scrolls, not the page, so nothing ends up unreachable.
 export default function Modal({ open, title, subtitle, onClose, size = 'md', children }) {
+  const dialogRef = useRef(null);
+  const previousFocusRef = useRef(null);
+
   useEffect(() => {
     if (!open) return undefined;
+
+    // Remember whatever had focus so it can get it back on close, rather
+    // than leaving focus stuck on a button that's now behind the backdrop.
+    previousFocusRef.current = document.activeElement;
+
+    const dialog = dialogRef.current;
+    const focusable = () =>
+      Array.from(dialog?.querySelectorAll(FOCUSABLE_SELECTOR) || []).filter((el) => el.offsetParent !== null);
+    // A field inside the dialog may already have claimed focus via its own
+    // autoFocus (PersonModal's first-name input, for instance) — that native
+    // browser behaviour runs before this effect does, so it must be checked
+    // for and left alone rather than overridden with the first focusable
+    // element by default (which would usually just be the × close button).
+    if (!dialog?.contains(document.activeElement)) {
+      (focusable()[0] || dialog)?.focus();
+    }
+
     const onKey = (e) => {
-      if (e.key === 'Escape') onClose?.();
+      if (e.key === 'Escape') {
+        onClose?.();
+        return;
+      }
+      if (e.key !== 'Tab' || !dialog) return;
+      const items = focusable();
+      if (items.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      } else if (!dialog.contains(document.activeElement)) {
+        // Focus escaped the dialog some other way (e.g. programmatic blur) —
+        // pull it back in rather than letting Tab continue into the page.
+        e.preventDefault();
+        first.focus();
+      }
     };
+
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     window.addEventListener('keydown', onKey);
     return () => {
       document.body.style.overflow = previous;
       window.removeEventListener('keydown', onKey);
+      const toRestore = previousFocusRef.current;
+      if (toRestore && typeof toRestore.focus === 'function') toRestore.focus();
     };
   }, [open, onClose]);
 
@@ -34,9 +83,11 @@ export default function Modal({ open, title, subtitle, onClose, size = 'md', chi
       }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        tabIndex={-1}
         className={`flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-white shadow-lift sm:rounded-2xl ${SIZES[size]}`}
       >
         {/* Grab handle, phone only — signals the sheet is dismissible. */}

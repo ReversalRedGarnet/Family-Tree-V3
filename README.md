@@ -79,6 +79,20 @@ npm run build
 npm run preview   # serve the built files locally to double check
 ```
 
+## Running tests
+
+```bash
+npm test
+```
+
+Vitest, configured in `vite.config.js` so it reuses the same setup as the
+dev server and build. Coverage is deliberately narrow: unit tests for the
+pure logic modules under `src/utils/` (the layout lattice, generation
+walk, validation rules, undo/redo history transition, Drive's
+reconciliation decision) and the Drive sync hook's own retry/conflict
+state machine (`src/hooks/useDriveSync.test.js`) — not React components or
+rendering, since that's not where this app's real risk or value is.
+
 ## Project structure
 
 ```

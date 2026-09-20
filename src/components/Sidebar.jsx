@@ -62,21 +62,46 @@ function Section({ title, hint, children, defaultOpen = true }) {
 function SyncStatus({ drive }) {
   if (!drive.configured) return null;
 
-  const { status, conflict, lastSyncedAt, signIn, signOut } = drive;
+  const { status, conflict, failedResolution, lastSyncedAt, signIn, signOut, retryResolveConflict } = drive;
 
+  // Relies on useDriveSync always clearing `conflict` before it ever lands
+  // on status 'error' -- a failed conflict RESOLUTION (as opposed to a
+  // freshly detected one still awaiting a decision) clears `conflict` for
+  // exactly this reason, so an error from it still falls through to the
+  // branch below instead of being hidden here along with the dialog.
   if (conflict) return null; // the conflict dialog itself covers this moment
 
   if (status === 'signed-out' || status === 'error') {
+    // A failed conflict RESOLUTION gets its own retry: the person already
+    // answered "keep this device" or "use Drive's version," and only the
+    // request to carry that out failed -- most likely a transient network
+    // blip, so retrying redoes that same choice rather than re-asking a
+    // question they already answered. A plain sign-in is offered alongside
+    // it as the fallback for when retrying the same request keeps failing
+    // outright (an actually expired or revoked token, say), which needs a
+    // fresh handshake rather than a repeat of a request that's genuinely
+    // not going to succeed.
+    const primaryLabel = failedResolution ? 'Try that again' : 'Sign in with Google to sync across devices';
+    const primaryAction = failedResolution ? retryResolveConflict : signIn;
+
     return (
       <div className="mb-3 rounded-xl border border-hairline bg-paper px-3 py-2.5">
         <button
-          onClick={signIn}
+          onClick={primaryAction}
           className="w-full rounded-lg bg-white px-3 py-2 text-left text-xs font-medium text-cyan-deep transition-colors hover:bg-cyan-wash"
         >
-          Sign in with Google to sync across devices
+          {primaryLabel}
         </button>
         {status === 'error' && drive.errorMessage && (
           <p className="mt-1.5 px-1 text-[11px] leading-snug text-rose">{drive.errorMessage}</p>
+        )}
+        {failedResolution && (
+          <button
+            onClick={signIn}
+            className="mt-1.5 px-1 text-[11px] font-medium text-mist underline-offset-2 hover:underline"
+          >
+            Or sign in again
+          </button>
         )}
       </div>
     );
@@ -121,6 +146,7 @@ export default function Sidebar({
   onSelect,
   onAddPerson,
   onEditPerson,
+  onPersonMenu,
   onLinkSelected,
   onRequestExport,
   onUndo,
@@ -268,35 +294,53 @@ export default function Sidebar({
                 </p>
                 <div className="space-y-1">
                   {list.map((person) => (
-                    <button
+                    <div
                       key={person.id}
-                      onPointerDown={(e) => {
-                        lastPointerTypeRef.current = e.pointerType;
-                      }}
-                      onClick={(e) => {
-                        const touchTap =
-                          lastPointerTypeRef.current === 'touch' || lastPointerTypeRef.current === 'pen';
-                        onSelect(person.id, touchTap || e.shiftKey);
-                      }}
-                      onDoubleClick={() => onEditPerson(person.id)}
-                      title="Tap to select · double-tap to edit · tap a second person to select both"
-                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
-                        selectedIds.includes(person.id)
-                          ? 'bg-cyan text-white'
-                          : 'text-ink hover:bg-cyan-wash'
+                      className={`flex items-center gap-0.5 rounded-lg transition-colors ${
+                        selectedIds.includes(person.id) ? 'bg-cyan text-white' : 'text-ink hover:bg-cyan-wash'
                       }`}
                     >
-                      <span className="flex-1 truncate">{fullName(person)}</span>
-                      {person.living === false && (
-                        <span
-                          className={`shrink-0 text-[10px] ${
-                            selectedIds.includes(person.id) ? 'text-white/80' : 'text-slate-quiet'
-                          }`}
-                        >
-                          ✝
-                        </span>
-                      )}
-                    </button>
+                      <button
+                        onPointerDown={(e) => {
+                          lastPointerTypeRef.current = e.pointerType;
+                        }}
+                        onClick={(e) => {
+                          const touchTap =
+                            lastPointerTypeRef.current === 'touch' || lastPointerTypeRef.current === 'pen';
+                          onSelect(person.id, touchTap || e.shiftKey);
+                        }}
+                        onDoubleClick={() => onEditPerson(person.id)}
+                        title="Tap to select · double-tap to edit · tap a second person to select both"
+                        className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left text-sm"
+                      >
+                        <span className="flex-1 truncate">{fullName(person)}</span>
+                        {person.living === false && (
+                          <span
+                            className={`shrink-0 text-[10px] ${
+                              selectedIds.includes(person.id) ? 'text-white/80' : 'text-slate-quiet'
+                            }`}
+                          >
+                            ✝
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          onPersonMenu(person.id, rect.right, rect.bottom);
+                        }}
+                        aria-label={`Actions for ${fullName(person)}`}
+                        aria-haspopup="menu"
+                        title="Add a parent, child, sibling, or delete"
+                        className={`shrink-0 rounded-lg px-2 py-1.5 text-sm transition-colors ${
+                          selectedIds.includes(person.id)
+                            ? 'text-white/80 hover:bg-white/10 hover:text-white'
+                            : 'text-mist hover:bg-cyan-soft/50 hover:text-ink'
+                        }`}
+                      >
+                        ⋯
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>

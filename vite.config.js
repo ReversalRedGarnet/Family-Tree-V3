@@ -12,4 +12,12 @@ export default defineConfig({
     port: 5173,
     open: true,
   },
+  // Mostly pure-logic unit tests (see src/utils/*.test.js) — no DOM needed,
+  // so the default 'node' environment is enough and keeps them fast. The one
+  // exception, src/hooks/useDriveSync.test.js, opts into 'jsdom' itself via
+  // a per-file `@vitest-environment` comment, since it renders the hook
+  // through React Testing Library.
+  test: {
+    include: ['src/**/*.test.js'],
+  },
 });

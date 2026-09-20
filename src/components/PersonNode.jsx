@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Group, Ellipse, Rect, Circle, Text } from 'react-konva';
 import { CARD_WIDTH, CARD_HEIGHT, COLOR_THEMES, shapeForGender } from '../utils/constants';
 import { formatLifespan } from '../utils/dates';
@@ -31,7 +32,7 @@ function clipToShape(shape) {
   };
 }
 
-export default function PersonNode({
+function PersonNode({
   person,
   x,
   y,
@@ -209,3 +210,46 @@ export default function PersonNode({
     </Group>
   );
 }
+
+// Every prop that actually feeds into the JSX above, checked explicitly
+// rather than trusting memo's default shallow compare to happen to cover
+// the same ground forever as props get added or renamed:
+//   person, x, y            -- name/gender/colour/dates/living AND position
+//   selected/highlighted/
+//     conflicted             -- stroke, shadow, and whether the badge renders
+//   exportTheme              -- font family and card tone during export capture
+// `person` is compared by reference on purpose, not by field: every commit
+// in useFamilyTree.js that touches one person spreads the OTHERS through
+// unchanged (`{ ...g.people, [id]: {...} }`), so an unrelated card's
+// `person` object keeps the exact same reference across a render that
+// doesn't concern it -- a reference check is both correct and free of
+// needing to enumerate every field by hand.
+//
+// The callback props (registerRef, onDragStart, onClick, ...) are compared
+// too, not skipped: Canvas.jsx is responsible for keeping their identities
+// stable across renders that don't concern this card (see the registerRef
+// cache and the hoisted click/context-menu handlers there), and comparing
+// them here is what makes a slip on that side (a callback that starts
+// changing identity every render again) fail as "this card keeps
+// re-rendering," not as a silent stale closure attached to Konva.
+function personPropsAreEqual(prev, next) {
+  return (
+    prev.person === next.person &&
+    prev.x === next.x &&
+    prev.y === next.y &&
+    prev.selected === next.selected &&
+    prev.highlighted === next.highlighted &&
+    prev.conflicted === next.conflicted &&
+    prev.exportTheme === next.exportTheme &&
+    prev.registerRef === next.registerRef &&
+    prev.onDragStart === next.onDragStart &&
+    prev.onDragMove === next.onDragMove &&
+    prev.onDragEnd === next.onDragEnd &&
+    prev.onClick === next.onClick &&
+    prev.onDblClick === next.onDblClick &&
+    prev.onContextMenu === next.onContextMenu &&
+    prev.onConflictClick === next.onConflictClick
+  );
+}
+
+export default memo(PersonNode, personPropsAreEqual);

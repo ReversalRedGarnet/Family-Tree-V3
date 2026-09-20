@@ -103,6 +103,24 @@ const Canvas = forwardRef(function Canvas(
   // the gesture (see handleDragMove/handleDragEnd) without going through
   // React state on every pointer move.
   const nodeRefs = useRef({});
+  // One ref-callback per person id, created once and reused forever rather
+  // than fresh on every render — PersonNode is memoized (see
+  // personPropsAreEqual there), and a `registerRef` that changed identity
+  // every render would defeat that for every single card on every render,
+  // exactly the same way the inline onClick/onContextMenu closures below
+  // used to.
+  const registerRefCache = useRef(new Map());
+  const getRegisterRef = useCallback((id) => {
+    let fn = registerRefCache.current.get(id);
+    if (!fn) {
+      fn = (node) => {
+        if (node) nodeRefs.current[id] = node;
+        else delete nodeRefs.current[id];
+      };
+      registerRefCache.current.set(id, fn);
+    }
+    return fn;
+  }, []);
   // Mouse-only pan (middle-button, or space+left-button, on empty canvas)
   // and touch pan (single finger) both go through this: the client point
   // and view offset the gesture started from. Konva's own `draggable` used
@@ -593,6 +611,35 @@ const Canvas = forwardRef(function Canvas(
     [findDropTarget, people, onDropOverlap, onDropOnConnector, onMovePerson, onMoveMany]
   );
 
+  // ---- Person-level events ----
+  //
+  // Hoisted out of the people.map() below rather than written inline there:
+  // an inline arrow function is a fresh identity every render regardless of
+  // what actually changed, which would defeat PersonNode's memoization for
+  // every card, every render (see personPropsAreEqual in PersonNode.jsx).
+  // Neither of these closes over a specific person — PersonNode itself
+  // already curries its own id in before calling back out (see
+  // `onClick={(e) => onClick(person.id, e)}` there) — so one shared
+  // function per Canvas render is enough for every card on the board.
+
+  // Shift/Cmd-click adds to the selection on a real keyboard; a touchscreen
+  // has neither key, so a tap has to mean the same thing on its own —
+  // otherwise picking two people to link on mobile is simply impossible,
+  // since every tap would replace the selection instead of building a pair.
+  const handlePersonClick = useCallback(
+    (personId, e) => onSelect(personId, e.evt.shiftKey || e.evt.metaKey || isTouchEvent(e.evt)),
+    [onSelect]
+  );
+
+  const handlePersonContextMenu = useCallback(
+    (personId, e) => {
+      e.evt.preventDefault();
+      e.cancelBubble = true;
+      onPersonContextMenu(personId, e.evt.clientX, e.evt.clientY);
+    },
+    [onPersonContextMenu]
+  );
+
   // ---- Stage-level events ----
 
   const handleStageClick = useCallback(
@@ -687,25 +734,13 @@ const Canvas = forwardRef(function Canvas(
               selected={selectedIds.includes(id)}
               highlighted={hoverTargetId === id}
               conflicted={Boolean(conflicts?.has?.(id))}
-              registerRef={(node) => {
-                if (node) nodeRefs.current[id] = node;
-                else delete nodeRefs.current[id];
-              }}
+              registerRef={getRegisterRef(id)}
               onDragStart={handleDragStart}
               onDragMove={handleDragMove}
               onDragEnd={handleDragEnd}
-              // Shift/Cmd-click adds to the selection on a real keyboard; a
-              // touchscreen has neither key, so a tap has to mean the same
-              // thing on its own — otherwise picking two people to link on
-              // mobile is simply impossible, since every tap would replace
-              // the selection instead of building a pair.
-              onClick={(personId, e) => onSelect(personId, e.evt.shiftKey || e.evt.metaKey || isTouchEvent(e.evt))}
+              onClick={handlePersonClick}
               onDblClick={onEditPerson}
-              onContextMenu={(personId, e) => {
-                e.evt.preventDefault();
-                e.cancelBubble = true;
-                onPersonContextMenu(personId, e.evt.clientX, e.evt.clientY);
-              }}
+              onContextMenu={handlePersonContextMenu}
               onConflictClick={onConflictClick}
               exportTheme={exportTheme}
             />

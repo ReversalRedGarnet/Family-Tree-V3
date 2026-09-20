@@ -16,6 +16,7 @@ export default function ConfirmDialog({
 
       <div className="mt-6 flex gap-2">
         <button
+          autoFocus
           onClick={onCancel}
           className="flex-1 rounded-xl border border-hairline bg-white px-4 py-2.5 font-medium text-ink transition-colors hover:bg-cyan-wash"
         >
