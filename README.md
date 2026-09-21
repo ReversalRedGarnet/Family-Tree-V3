@@ -525,7 +525,7 @@ current editing session started.
 ## Export templates
 
 The "Look" picker in the export dialog is presentation only: it changes
-the colours and typeface of the exported PNG/PDF, never the underlying
+the colours and typeface of the exported PNG/PDF (yet to be implemented), never the underlying
 data, and never the editable board itself — that always renders exactly
 as it does day to day. Relationship-line colours don't change between
 templates even so, since those carry meaning (divorced vs. widowed vs.
