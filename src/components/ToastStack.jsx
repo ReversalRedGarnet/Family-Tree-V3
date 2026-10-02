@@ -19,6 +19,17 @@ export default function ToastStack({ toasts, onDismiss }) {
           }`}
         >
           <span className="flex-1 leading-snug">{toast.message}</span>
+          {toast.action && (
+            <button
+              onClick={() => {
+                toast.action.onClick();
+                onDismiss(toast.id);
+              }}
+              className="shrink-0 rounded-lg border border-current px-2 py-0.5 text-xs font-medium"
+            >
+              {toast.action.label}
+            </button>
+          )}
           <button
             onClick={() => onDismiss(toast.id)}
             aria-label="Dismiss"

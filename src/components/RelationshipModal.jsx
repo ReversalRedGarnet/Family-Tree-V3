@@ -9,6 +9,7 @@ import {
   SIBLING_TYPES,
   PARENT_TYPES,
 } from '../utils/constants';
+import { formatName } from '../utils/names';
 
 const field =
   'w-full rounded-xl border border-hairline bg-white px-3 py-2.5 text-sm text-ink transition-colors focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/30';
@@ -94,7 +95,7 @@ export default function RelationshipModal({
 
   const nameOf = (id) => {
     const p = people[id];
-    return p ? `${p.firstName} ${p.lastName}`.trim() || 'Unnamed' : 'Someone';
+    return p ? formatName(p) : 'Someone';
   };
 
   const a = swapped ? personB : personA;

@@ -9,6 +9,7 @@ import {
   PARENT_TYPES,
   SIBLING_TYPES,
 } from '../utils/constants';
+import { formatName } from '../utils/names';
 
 const field =
   'w-full rounded-xl border border-hairline bg-white px-3 py-2.5 text-sm text-ink transition-colors placeholder:text-mist/60 focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/30';
@@ -285,9 +286,7 @@ export default function PersonModal({
               {links.map((rel) => {
                 const otherId = rel.a === initialPerson.id ? rel.b : rel.a;
                 const other = people[otherId];
-                const otherName = other
-                  ? `${other.firstName} ${other.lastName}`.trim() || 'Unnamed'
-                  : 'Someone';
+                const otherName = other ? formatName(other) : 'Someone';
                 const isParentOf = rel.kind === 'parent' && rel.a === initialPerson.id;
                 return (
                   <li

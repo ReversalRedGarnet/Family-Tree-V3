@@ -353,3 +353,60 @@ describe('useDriveSync routine autosync retry/backoff', () => {
     unmount();
   });
 });
+
+// A tree pulled down from Drive goes through the same sanitiser as this
+// browser's own save, so a bad file there can't crash the board.
+describe('useDriveSync download path', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    installFakeGoogleIdentity();
+    findAppDataFile.mockReset();
+    downloadAppDataFile.mockReset();
+    uploadAppDataFile.mockReset();
+    // This device is empty and Drive has a tree, so the handshake downloads.
+    findAppDataFile.mockResolvedValue({ id: REMOTE_FILE_ID, modifiedTime: DRIVE_SAVED_AT });
+  });
+
+  afterEach(() => {
+    delete window.google;
+  });
+
+  it('sanitises the downloaded tree before handing it to replaceGraph', async () => {
+    downloadAppDataFile.mockResolvedValueOnce({
+      people: { a: null, b: { firstName: 'B' } },
+      relationships: { r: { kind: 'parent', a: 'ghost', b: 'b' } },
+    });
+    const replaceGraph = vi.fn();
+    const { result, unmount } = renderHook(() =>
+      useDriveSync({ people: {}, relationships: {}, replaceGraph, pushToast: vi.fn() })
+    );
+
+    await act(async () => {
+      await result.current.signIn();
+    });
+
+    expect(replaceGraph).toHaveBeenCalledTimes(1);
+    const [graph] = replaceGraph.mock.calls[0];
+    expect(Object.keys(graph.people)).toEqual(['b']);
+    expect(graph.people.b).toMatchObject({ firstName: 'B', lastName: '' });
+    expect(graph.relationships).toEqual({});
+    unmount();
+  });
+
+  it('refuses a tree saved by a different version instead of loading it half-understood', async () => {
+    downloadAppDataFile.mockResolvedValueOnce({ version: 999, people: { a: { firstName: 'A' } }, relationships: {} });
+    const replaceGraph = vi.fn();
+    const { result, unmount } = renderHook(() =>
+      useDriveSync({ people: {}, relationships: {}, replaceGraph, pushToast: vi.fn() })
+    );
+
+    await act(async () => {
+      await result.current.signIn();
+    });
+
+    expect(replaceGraph).not.toHaveBeenCalled();
+    expect(result.current.status).toBe('error');
+    expect(result.current.errorMessage).toMatch(/different version/);
+    unmount();
+  });
+});

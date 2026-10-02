@@ -20,6 +20,7 @@ import {
   TOUCH_OVERLAP_THRESHOLD,
 } from '../utils/constants';
 import { buildConnectors, findConnectorAt } from '../utils/connectors';
+import { formatName } from '../utils/names';
 
 const MIN_SCALE = 0.3;
 const MAX_SCALE = 2.4;
@@ -40,7 +41,7 @@ function isTouchEvent(nativeEvt) {
 function nameOf(people, id) {
   const p = people[id];
   if (!p) return null;
-  return `${p.firstName} ${p.lastName}`.trim() || 'Unnamed';
+  return formatName(p);
 }
 
 function overlapFraction(ax, ay, bx, by) {

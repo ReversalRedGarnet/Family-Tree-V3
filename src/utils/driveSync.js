@@ -2,6 +2,7 @@
 // would be a lot of weight for three REST calls (list, get, upload) that
 // are simple enough to make by hand.
 import { GOOGLE_DRIVE_SCOPE, DRIVE_FILE_NAME } from './driveConfig';
+import { SAVE_VERSION } from './storage';
 
 const FILES_URL = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files';
@@ -91,7 +92,7 @@ export function buildMultipartBody(metadata, contentJson, boundary) {
 // overwrites it on every call after — a simple media-only PATCH once the
 // id is known, since the metadata never needs to change again.
 export async function uploadAppDataFile(token, fileId, payload) {
-  const contentJson = JSON.stringify(payload);
+  const contentJson = JSON.stringify({ version: SAVE_VERSION, ...payload });
 
   if (fileId) {
     const res = await driveFetch(`${UPLOAD_URL}/${fileId}?uploadType=media`, token, {

@@ -7,6 +7,7 @@ import {
   downloadAppDataFile,
   uploadAppDataFile,
 } from '../utils/driveSync';
+import { SAVE_VERSION, sanitizeGraph } from '../utils/storage';
 
 const FLAG_KEY = 'family-tree/drive-sync/v1';
 export const PUSH_DEBOUNCE_MS = 2500;
@@ -102,6 +103,17 @@ function requestToken(tokenClient, prompt) {
   });
 }
 
+// A Drive file goes through the same checks as this browser's own save
+// before it reaches state -- a bad file there would otherwise crash the
+// board on every device that signs in. Files written before `version`
+// existed are treated as version 1.
+function readDrivePayload(payload) {
+  if (payload?.version !== undefined && payload.version !== SAVE_VERSION) {
+    throw new Error('The tree on Google Drive was saved by a different version of this app, so it was left untouched.');
+  }
+  return sanitizeGraph(payload);
+}
+
 function emptyGraph(people, relationships) {
   return Object.keys(people || {}).length === 0 && Object.keys(relationships || {}).length === 0;
 }
@@ -181,7 +193,7 @@ export function useDriveSync({ people, relationships, replaceGraph, pushToast })
       }
 
       if (action === 'download') {
-        const payload = await downloadAppDataFile(token, remote.id);
+        const payload = readDrivePayload(await downloadAppDataFile(token, remote.id));
         // Silent: nothing on this device to lose, no choice the person
         // actually made, so this must not become an undo step -- see the
         // comment on replaceGraph in useFamilyTree.js.
@@ -298,7 +310,7 @@ export function useDriveSync({ people, relationships, replaceGraph, pushToast })
       setStatus('syncing');
       try {
         if (choice === 'use-drive') {
-          const payload = await downloadAppDataFile(token, target.fileId);
+          const payload = readDrivePayload(await downloadAppDataFile(token, target.fileId));
           replaceGraph(payload);
           const syncedAt = target.driveSavedAt;
           setLastSyncedAt(syncedAt);

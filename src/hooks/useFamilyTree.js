@@ -43,15 +43,22 @@ export function useFamilyTree() {
     const loaded = loadedRef.current;
     return {
       past: [],
-      present: loaded ? { people: loaded.people, relationships: loaded.relationships } : EMPTY_GRAPH,
+      present:
+        loaded.status === 'ok' ? { people: loaded.people, relationships: loaded.relationships } : EMPTY_GRAPH,
       future: [],
     };
   });
-  // How many relationships loadGraph() had to drop for pointing at a
-  // person that no longer exists (or never did) -- read once, at mount,
-  // purely so App.jsx can surface a one-time toast; it plays no further
-  // part in the graph itself.
-  const [loadRepairedCount] = useState(() => loadedRef.current?.droppedCount || 0);
+  // How many people/relationships loadGraph() had to drop as unusable --
+  // read once, at mount, purely so App.jsx can surface a one-time toast; it
+  // plays no further part in the graph itself.
+  const [loadRepairedCount] = useState(() => loadedRef.current.droppedCount || 0);
+  // Set when the save in this browser couldn't be used at all (unreadable,
+  // or written by a different version). The board starts empty, and App.jsx
+  // must not autosave over the original until it's safe to -- see there.
+  const [loadIssue] = useState(() => {
+    const { status, raw, backupKey } = loadedRef.current;
+    return status === 'unreadable' || status === 'unsupported-version' ? { status, raw, backupKey } : null;
+  });
   const [selectedIds, setSelectedIds] = useState([]);
 
   const graph = history.present;
@@ -393,6 +400,7 @@ export function useFamilyTree() {
     people,
     relationships,
     loadRepairedCount,
+    loadIssue,
     selectedIds,
     generation,
     conflicts,

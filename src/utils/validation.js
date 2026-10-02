@@ -1,12 +1,13 @@
 import { wouldCreateCycle, parentsOf, activePartnersOf } from './generations';
 import { getPersonDateWarnings, getParentChildAgeWarnings } from './dates';
+import { formatName } from './names';
 
 const unordered = (rel, x, y) =>
   (rel.a === x && rel.b === y) || (rel.a === y && rel.b === x);
 
 const displayName = (people, id) => {
   const p = people[id];
-  return p ? `${p.firstName} ${p.lastName}`.trim() || 'Unnamed' : 'Someone';
+  return p ? formatName(p) : 'Someone';
 };
 
 // The only blocking rules left are the ones that would make the tree
@@ -155,7 +156,7 @@ export function collectTreeWarnings(people, relationships) {
   const note = (person, message) =>
     warnings.push({
       personId: person.id,
-      name: `${person.firstName} ${person.lastName}`.trim() || 'Unnamed',
+      name: formatName(person),
       message,
     });
 

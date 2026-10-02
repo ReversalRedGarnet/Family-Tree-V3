@@ -27,7 +27,8 @@ import {
   partnerChildLinksToWrite,
 } from './utils/generations';
 import { exportAsPng, exportAsPdf } from './utils/exportTree';
-import { saveGraph } from './utils/storage';
+import { saveGraph, downloadRawSave } from './utils/storage';
+import { formatName } from './utils/names';
 import { MOBILE_BREAKPOINT, exportThemeFor } from './utils/constants';
 
 const CLOSED_MENU = { open: false, x: 0, y: 0, items: [] };
@@ -129,13 +130,45 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The save in this browser couldn't be used, so the board started empty.
+  // The original is never silently lost: loadGraph() copied it to a backup
+  // key, and if even that copy failed, autosave stays paused until the
+  // person has downloaded it.
+  const { loadIssue } = tree;
+  const [saveBlocked, setSaveBlocked] = useState(() => Boolean(loadIssue && !loadIssue.backupKey));
+  useEffect(() => {
+    if (!loadIssue) return;
+    const what =
+      loadIssue.status === 'unsupported-version'
+        ? 'The tree saved in this browser was made by a different version of this app, so the board starts empty.'
+        : "The tree saved in this browser couldn't be read, so the board starts empty.";
+    const next = loadIssue.backupKey
+      ? ' A copy was kept in this browser — download it to keep it safe.'
+      : " Autosave is paused until you download your saved copy, so it isn't overwritten.";
+    pushToast(`${what}${next}`, 'warning', 0, {
+      label: 'Download it',
+      onClick: () => {
+        downloadRawSave(loadIssue.raw);
+        setSaveBlocked(false);
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Persisted to this browser only — no account, no sync elsewhere. Runs on
   // every structural change (add, delete, link, drag-end, etc.), not on
   // every keystroke, since those only touch the open form's local state
   // until Save is pressed. Warns once per session rather than on every
   // failed write, so a full/disabled storage doesn't spam toasts.
   const warnedAboutSaveRef = useRef(false);
+  const initialGraphRef = useRef({ people, relationships });
   useEffect(() => {
+    if (saveBlocked) return;
+    // After an unusable load, the empty starting board isn't worth writing
+    // over the original -- wait for the first real change.
+    const untouched =
+      people === initialGraphRef.current.people && relationships === initialGraphRef.current.relationships;
+    if (loadIssue && untouched) return;
     const ok = saveGraph({ people, relationships });
     if (!ok && !warnedAboutSaveRef.current && (Object.keys(people).length || Object.keys(relationships).length)) {
       warnedAboutSaveRef.current = true;
@@ -145,13 +178,13 @@ export default function App() {
         6000
       );
     }
-  }, [people, relationships, pushToast]);
+  }, [people, relationships, pushToast, loadIssue, saveBlocked]);
 
   const closeMenu = useCallback(() => setContextMenu(CLOSED_MENU), []);
   const nameOf = useCallback(
     (id) => {
       const p = people[id];
-      return p ? `${p.firstName} ${p.lastName}`.trim() || 'Unnamed' : 'Someone';
+      return p ? formatName(p) : 'Someone';
     },
     [people]
   );
@@ -303,7 +336,7 @@ export default function App() {
       const duplicate = findDuplicatePerson(formData, people, editing ? personModal.editingId : null);
 
       if (duplicate) {
-        const who = `${duplicate.firstName} ${duplicate.lastName}`.trim() || 'Unnamed';
+        const who = formatName(duplicate);
         setConfirmState({
           title: editing ? 'That matches someone else' : 'You already added this person',
           message: `${who} is already on the board with the same name, gender and year of birth.\n\nIf these really are two different people, carry on — it's worth giving one of them a distinguishing detail so they're easy to tell apart later.`,
