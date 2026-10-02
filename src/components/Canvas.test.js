@@ -174,3 +174,40 @@ describe('Space belongs to the focused control (F10)', () => {
     fireEvent.keyUp(document.body, { key: ' ', code: 'Space' });
   });
 });
+
+describe('a click then a quick right-click is not a double-click (F11)', () => {
+  function card() {
+    const onEditPerson = vi.fn();
+    render(h(Board, propsFor({ a: person('a', 'Ann', 100) }, { onEditPerson })));
+    const group = groups.get(100);
+    const press = (button) => act(() => group.onMouseDown({ evt: { button } }));
+    const dblclick = (button) => act(() => group.onDblClick({ evt: { button } }));
+    return { group, onEditPerson, press, dblclick };
+  }
+
+  it('left then right does not open Edit', () => {
+    const { onEditPerson, press, dblclick } = card();
+    press(0);
+    press(2);
+    dblclick(2);
+    expect(onEditPerson).not.toHaveBeenCalled();
+  });
+
+  it('right then left does not either', () => {
+    const { onEditPerson, press, dblclick } = card();
+    press(2);
+    press(0);
+    dblclick(0);
+    expect(onEditPerson).not.toHaveBeenCalled();
+  });
+
+  it('a real double-click, and a double-tap, still open Edit', () => {
+    const { group, onEditPerson, press, dblclick } = card();
+    press(0);
+    press(0);
+    dblclick(0);
+    expect(onEditPerson).toHaveBeenCalledWith('a');
+    act(() => group.onDblTap({ evt: {} }));
+    expect(onEditPerson).toHaveBeenCalledTimes(2);
+  });
+});

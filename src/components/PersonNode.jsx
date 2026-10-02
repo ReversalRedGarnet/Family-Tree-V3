@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useRef } from 'react';
 import { Group, Ellipse, Rect, Circle, Text } from 'react-konva';
 import {
   CARD_WIDTH,
@@ -47,6 +47,13 @@ function clipToShape(shape) {
   };
 }
 
+// Konva calls any two clicks on the same card a double-click, whatever the
+// mouse button, so a click followed quickly by a right-click opened Edit
+// instead of the menu (AUDIT F11). Only two primary-button presses count.
+export function isPrimaryDoubleClick(lastTwoButtons) {
+  return lastTwoButtons.length === 2 && lastTwoButtons.every((button) => button === 0);
+}
+
 function PersonNode({
   person,
   x,
@@ -64,6 +71,8 @@ function PersonNode({
   onConflictClick,
   exportTheme, // only ever set during export capture — see App.jsx
 }) {
+  // The buttons of this card's last two mouse presses.
+  const pressedButtonsRef = useRef([]);
   const shape = shapeForGender(person.gender);
   const isCircle = shape === 'circle';
   const theme = COLOR_THEMES.find((c) => c.id === person.colorTheme)?.hex || '#0EA5B7';
@@ -130,7 +139,12 @@ function PersonNode({
       onDragEnd={(e) => onDragEnd(person.id, e.target.x(), e.target.y(), e.target)}
       onClick={(e) => onClick(person.id, e)}
       onTap={(e) => onClick(person.id, e)}
-      onDblClick={() => onDblClick(person.id)}
+      onMouseDown={(e) => {
+        pressedButtonsRef.current = [...pressedButtonsRef.current, e.evt.button].slice(-2);
+      }}
+      onDblClick={() => {
+        if (isPrimaryDoubleClick(pressedButtonsRef.current)) onDblClick(person.id);
+      }}
       onDblTap={() => onDblClick(person.id)}
       onContextMenu={(e) => onContextMenu(person.id, e)}
       onMouseEnter={(e) => {
