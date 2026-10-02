@@ -40,13 +40,16 @@ describe('contrast (M4)', () => {
     }
   });
 
-  it('card text clears 4.5:1 on its own fill, and the memorial band carries white text', () => {
-    const { living, gone } = board.card;
-    expect(contrast(living.title, living.fill)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(living.sub, living.fill)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(gone.title, gone.fill)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(gone.sub, gone.fill)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(WHITE, gone.band)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(board.memoColor, board.background)).toBeGreaterThanOrEqual(4.5);
-  });
+  // Every export template, the plain board and parchment (F6) alike.
+  for (const theme of EXPORT_THEMES) {
+    it(`${theme.label}: card text clears 4.5:1 on its fill, and the memorial band carries white text`, () => {
+      const { living, gone } = theme.card;
+      expect(contrast(living.title, living.fill)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(living.sub, living.fill)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(gone.title, gone.fill)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(gone.sub, gone.fill)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(WHITE, gone.band)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(theme.memoColor, theme.background)).toBeGreaterThanOrEqual(4.5);
+    });
+  }
 });

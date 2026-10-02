@@ -203,10 +203,13 @@ export const EXPORT_THEMES = [
     description: 'Warm, archival tones and a serif hand — built for printing or framing.',
     background: '#F1E7D2',
     fontFamily: 'Georgia, "Times New Roman", serif',
-    memoColor: '#8A7256',
+    // Same warm browns as before, each darkened just enough to clear 4.5:1
+    // where it carries text: the memo on the paper (4.6:1), the lifespan on
+    // a card (5.2:1), white text on the memorial band (4.7:1).
+    memoColor: '#7A6449',
     card: {
-      living: { fill: '#FBF6EA', title: '#5B4632', sub: '#8A7256' },
-      gone: { fill: '#EFE2C4', title: '#6E5A42', sub: '#9C8768', band: '#B79F78' },
+      living: { fill: '#FBF6EA', title: '#5B4632', sub: '#7A6449' },
+      gone: { fill: '#EFE2C4', title: '#6E5A42', sub: '#735E44', band: '#87704E' },
     },
   },
 ];
