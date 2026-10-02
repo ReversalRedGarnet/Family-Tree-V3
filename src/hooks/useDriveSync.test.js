@@ -586,3 +586,105 @@ describe('sync uses the tree as it is now, and Drive\'s clock (L21, M11)', () =>
     unmount();
   });
 });
+
+describe("Google's sign-in window closed or failed (F9)", () => {
+  // Each requestAccessToken call is answered by the next outcome in the
+  // list: a token, or one of the errors Google sends to error_callback.
+  function installGoogleAnswering(outcomes) {
+    const prompts = [];
+    window.google = {
+      accounts: {
+        oauth2: {
+          initTokenClient: (cfg) => {
+            const client = {
+              callback: () => {},
+              requestAccessToken: ({ prompt }) => {
+                prompts.push(prompt);
+                const outcome = outcomes.shift();
+                Promise.resolve().then(() =>
+                  outcome.error ? cfg.error_callback?.(outcome.error) : client.callback({ access_token: outcome.token })
+                );
+              },
+            };
+            return client;
+          },
+          revoke: (_token, cb) => cb?.(),
+        },
+      },
+    };
+    return prompts;
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    findAppDataFile.mockReset();
+    uploadAppDataFile.mockReset();
+    findAppDataFile.mockResolvedValue(null);
+    uploadAppDataFile.mockResolvedValue({ id: 'file-1', modifiedTime: '2024-05-01T00:00:00.000Z' });
+  });
+  afterEach(() => {
+    delete window.google;
+  });
+
+  const mount = () =>
+    renderHook(() => useDriveSync({ people: {}, relationships: {}, replaceGraph: vi.fn(), pushToast: vi.fn() }));
+
+  it('a closed window ends "Connecting…" with a message and Sign in can be tried again', async () => {
+    installGoogleAnswering([{ error: { type: 'popup_closed', message: 'Popup window closed' } }, { token: 't' }]);
+    const { result, unmount } = mount();
+
+    await act(async () => {
+      await result.current.signIn();
+    });
+    expect(result.current.status).toBe('error');
+    expect(result.current.errorMessage).toMatch(/sign-in window was closed/);
+
+    await act(async () => {
+      await result.current.signIn();
+    });
+    expect(result.current.status).toBe('signed-in');
+    expect(result.current.errorMessage).toBeNull();
+    unmount();
+  });
+
+  it('a blocked pop-up says to allow pop-ups', async () => {
+    installGoogleAnswering([{ error: { type: 'popup_failed_to_open' } }]);
+    const { result, unmount } = mount();
+    await act(async () => {
+      await result.current.signIn();
+    });
+    expect(result.current.status).toBe('error');
+    expect(result.current.errorMessage).toMatch(/Allow pop-ups/);
+    unmount();
+  });
+
+  it('Reconnect falls back to Sign in, saying why, instead of staying on "Connecting…"', async () => {
+    window.localStorage.setItem('family-tree/drive-sync/v1', JSON.stringify({ signedIn: true, fileId: null, lastSyncedAt: null }));
+    const prompts = installGoogleAnswering([{ error: { type: 'popup_closed' } }]);
+    const { result, unmount } = mount();
+    expect(result.current.canReconnect).toBe(true);
+
+    await act(async () => {
+      await result.current.reconnect();
+    });
+    expect(prompts).toEqual(['']);
+    expect(result.current.status).toBe('error');
+    expect(result.current.canReconnect).toBe(false);
+    expect(result.current.errorMessage).toMatch(/closed/);
+    unmount();
+  });
+
+  it('a later success after an error is answered normally (no stale error handler)', async () => {
+    installGoogleAnswering([{ error: { type: 'unknown', message: 'boom' } }, { token: 't' }]);
+    const { result, unmount } = mount();
+    await act(async () => {
+      await result.current.signIn();
+    });
+    expect(result.current.errorMessage).toMatch(/boom/);
+    await act(async () => {
+      await result.current.signIn();
+    });
+    expect(result.current.status).toBe('signed-in');
+    unmount();
+  });
+});

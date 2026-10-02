@@ -113,12 +113,35 @@ export function loadGoogleIdentity() {
   return googleIdentityPromise;
 }
 
+// Google reports a sign-in window that was closed, blocked or failed through
+// the token client's `error_callback`, never through `callback`. Without
+// listening for it, a request just never settled and the status sat on
+// "Connecting…" for good. Each client's in-flight request is kept here so
+// that callback (set once, in initTokenClient) can reach it.
+const pendingTokenErrors = new WeakMap();
+
+// What the person sees for each kind of failure Google reports.
+export function signInWindowMessage(err) {
+  if (err?.type === 'popup_closed') {
+    return 'The Google sign-in window was closed before signing in finished. Sign in again whenever you’re ready.';
+  }
+  if (err?.type === 'popup_failed_to_open') {
+    return 'The Google sign-in window couldn’t open. Allow pop-ups for this site, then sign in again.';
+  }
+  return `Google sign-in didn’t finish${err?.message ? ` (${err.message})` : ''}. Sign in again to retry.`;
+}
+
 function requestToken(tokenClient, prompt) {
   return new Promise((resolve, reject) => {
     tokenClient.callback = (resp) => {
+      pendingTokenErrors.delete(tokenClient);
       if (resp?.error) reject(new Error(resp.error_description || resp.error));
       else resolve(resp.access_token);
     };
+    pendingTokenErrors.set(tokenClient, (err) => {
+      pendingTokenErrors.delete(tokenClient);
+      reject(Object.assign(new Error(signInWindowMessage(err)), { signInWindow: err?.type || 'unknown' }));
+    });
     tokenClient.requestAccessToken({ prompt });
   });
 }
@@ -183,12 +206,14 @@ export function useDriveSync({ people, relationships, replaceGraph, pushToast })
   const ensureTokenClient = useCallback(async () => {
     if (tokenClientRef.current) return tokenClientRef.current;
     const google = await loadGoogleIdentity();
-    tokenClientRef.current = google.accounts.oauth2.initTokenClient({
+    const client = google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
       scope: GOOGLE_DRIVE_SCOPE,
       callback: () => {}, // replaced per-request by requestToken()
+      error_callback: (err) => pendingTokenErrors.get(client)?.(err),
     });
-    return tokenClientRef.current;
+    tokenClientRef.current = client;
+    return client;
   }, []);
 
   // Runs once a token is in hand, whether this is a brand-new sign-in or a
@@ -313,11 +338,17 @@ export function useDriveSync({ people, relationships, replaceGraph, pushToast })
       // Same reasoning as signIn() above: 'ask' is a settled state of its
       // own, not "still connecting".
       setStatus(action === 'ask' ? 'conflict' : 'signed-in');
-    } catch {
+    } catch (err) {
       // A quiet reauth failing is routine (third-party storage blocked,
       // access revoked): offer a full sign-in instead of a scary error.
+      // If Google's window was closed or blocked, say so next to it.
       setCanReconnect(false);
-      setStatus('signed-out');
+      if (err?.signInWindow) {
+        setStatus('error');
+        setErrorMessage(err.message);
+      } else {
+        setStatus('signed-out');
+      }
     }
   }, [ensureTokenClient, runHandshake]);
 
