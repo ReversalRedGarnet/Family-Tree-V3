@@ -1,7 +1,20 @@
 import { memo } from 'react';
 import { Group, Ellipse, Rect, Circle, Text } from 'react-konva';
-import { CARD_WIDTH, CARD_HEIGHT, COLOR_THEMES, shapeForGender } from '../utils/constants';
+import {
+  CARD_WIDTH,
+  CARD_HEIGHT,
+  CARD_NAME_FONT_SIZE as NAME_FONT,
+  CARD_NAME_LINE_HEIGHT as NAME_LINE,
+  CARD_SUB_FONT_SIZE,
+  CARD_TEXT_INSET,
+  CARD_LIFESPAN_Y,
+  CARD_BAND_HEIGHT as BAND_HEIGHT,
+  COLOR_THEMES,
+  exportThemeFor,
+  shapeForGender,
+} from '../utils/constants';
 import { formatLifespan } from '../utils/dates';
+import { cardName } from '../utils/names';
 
 const W = CARD_WIDTH;
 const H = CARD_HEIGHT;
@@ -10,15 +23,12 @@ const FONT = 'Proxima Nova, proxima-nova, system-ui, sans-serif';
 const HALF_W = W / 2;
 const HALF_H = H / 2;
 
-// Kept in step with EXPORT_THEMES[0].card in constants.js. Every text
-// colour clears 4.5:1 on its fill; the band carries white text (5.5:1).
-const LIVING = { fill: '#FFFFFF', title: '#103A44', sub: '#4E6E77' };
-const GONE = { fill: '#EEF3F4', title: '#4A6870', sub: '#4E6E77', band: '#4E6E77' };
+// On screen a card always looks like the "Board" export template. Every
+// text colour clears 4.5:1 on its fill; the band carries white text (5.5:1).
+const { living: LIVING, gone: GONE } = exportThemeFor('board').card;
 // A deceased card's outline: quieter than a living card's colour, but
 // still 3:1 against the board so the card's edge stays visible.
 const GONE_STROKE = '#7A9299';
-
-const BAND_HEIGHT = 20;
 
 // Clipping the memorial band to the card silhouette means one treatment
 // works for both shapes: a straight edge on a rectangle, a chord on a circle.
@@ -65,7 +75,7 @@ function PersonNode({
   const goneTone = exportTheme?.card?.gone || GONE;
   const tone = gone ? goneTone : livingTone;
 
-  const name = `${person.firstName || 'Unnamed'} ${person.lastName || ''}`.trim();
+  const name = cardName(person);
   const lifespan = formatLifespan(person);
 
   const stroke = highlighted ? '#0EA5B7' : selected ? '#0B6E7C' : gone ? GONE_STROKE : theme;
@@ -101,13 +111,11 @@ function PersonNode({
   // wrapped down over the lifespan. With a lifespan the box grows upward
   // from the line just above it, so a one-line name sits where it always
   // did; without one, the name is centred.
-  const NAME_FONT = 13.5;
-  const NAME_LINE = 1.15;
   const nameHeight = Math.ceil(NAME_FONT * NAME_LINE * 2);
   const nameY = lifespan ? -nameHeight : -nameHeight / 2;
-  const nameWidth = W - 36;
-  const lifespanY = 4;
-  const lifespanWidth = W - 36;
+  const nameWidth = W - CARD_TEXT_INSET;
+  const lifespanY = CARD_LIFESPAN_Y;
+  const lifespanWidth = W - CARD_TEXT_INSET;
 
   return (
     <Group
@@ -166,7 +174,7 @@ function PersonNode({
           width={lifespanWidth}
           align="center"
           fontFamily={fontFamily}
-          fontSize={10.5}
+          fontSize={CARD_SUB_FONT_SIZE}
           fill={tone.sub}
           listening={false}
         />
@@ -191,7 +199,7 @@ function PersonNode({
             width={HALF_W * 2}
             align="center"
             fontFamily={fontFamily}
-            fontSize={10.5}
+            fontSize={CARD_SUB_FONT_SIZE}
             fill="#FFFFFF"
           />
         </Group>

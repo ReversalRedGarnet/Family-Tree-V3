@@ -171,6 +171,25 @@ export const MIN_SLOT_GAP = SLOT_STEP - 1;
 // this far from it, centre to centre: just clear, with a small visible gap.
 export const DROP_CLEARANCE = CARD_WIDTH + 12;
 
+// ---- Card text ----
+// Shared by every card shape. The name box is exactly two lines tall, so a
+// long name ends in an ellipsis instead of running over the lifespan.
+export const CARD_NAME_FONT_SIZE = 13.5;
+export const CARD_NAME_LINE_HEIGHT = 1.15;
+export const CARD_SUB_FONT_SIZE = 10.5; // lifespan, and the memorial band's text
+export const CARD_TEXT_INSET = 36; // total left + right margin for text on a card
+export const CARD_LIFESPAN_Y = 4; // top of the lifespan line, from the card's centre
+export const CARD_BAND_HEIGHT = 20; // the memorial band along a deceased card's base
+
+// ---- Board ----
+// Empty space kept round the tree when fitting it on screen or exporting.
+export const BOARD_PADDING = 140;
+// One press of the zoom buttons zooms in or out by this factor.
+export const ZOOM_BUTTON_STEP = 1.2;
+// How far the pointer moves from mousedown on the empty board before it's
+// a marquee rather than a click.
+export const MARQUEE_THRESHOLD = 4;
+
 // ---- Breakpoint used by the responsive layout ----
 export const MOBILE_BREAKPOINT = 768;
 

@@ -1,14 +1,10 @@
 import { wouldCreateCycle, generationOffset, isBirthLink } from './generations';
 import { getPersonDateWarnings, getParentChildAgeWarnings, parseYear } from './dates';
-import { formatName } from './names';
+import { formatName, nameById } from './names';
 
 const unordered = (rel, x, y) =>
   (rel.a === x && rel.b === y) || (rel.a === y && rel.b === x);
 
-const displayName = (people, id) => {
-  const p = people[id];
-  return p ? formatName(p) : 'Someone';
-};
 
 // A partnership that has ended. Together, separated and no status at all are
 // all still current.
@@ -101,7 +97,7 @@ export function validateRelationship(kind, aId, bId, people, relationships, deta
     const bTaken = newPartnershipIsCurrent ? unconcludedPartnersOf(bId, relationships).filter((id) => id !== aId) : [];
     const taken = (id, otherId) => ({
       ok: false,
-      error: `${displayName(people, id)} is already partnered with ${displayName(people, otherId)}. Mark that link as divorced or widowed first (click it, then Edit link…).`,
+      error: `${nameById(people, id)} is already partnered with ${nameById(people, otherId)}. Mark that link as divorced or widowed first (click it, then Edit link…).`,
     });
     if (aTaken.length) return taken(aId, aTaken[0]);
     if (bTaken.length) return taken(bId, bTaken[0]);
@@ -133,7 +129,7 @@ export function validateRelationship(kind, aId, bId, people, relationships, deta
   if (required !== null) {
     const offset = generationOffset(aId, bId, people, relationships);
     if (offset !== null && offset !== required) {
-      return { ok: false, error: generationConflictMessage(kind, offset, displayName(people, aId), displayName(people, bId)) };
+      return { ok: false, error: generationConflictMessage(kind, offset, nameById(people, aId), nameById(people, bId)) };
     }
   }
 

@@ -1,4 +1,4 @@
-import { Fragment, useMemo } from 'react';
+import { useMemo } from 'react';
 import { Circle, Group, Line, Shape, Text } from 'react-konva';
 import { buildConnectors } from '../utils/connectors';
 import { EXPORT_THEMES } from '../utils/constants';
@@ -167,21 +167,19 @@ export default function RelationshipLines({
       >
         <Line points={connector.segments[0]} {...stroke} hitStrokeWidth={16} />
         {connector.label && (
-          <Fragment>
-            <Text
-              text={connector.label.text}
-              x={connector.label.x - LABEL_WIDTH / 2}
-              y={connector.label.y - 16}
-              width={LABEL_WIDTH}
-              wrap="none"
-              ellipsis
-              align="center"
-              fontFamily={exportTheme?.fontFamily || BOARD.fontFamily}
-              fontSize={10}
-              fill="#4E6E77"
-              listening={false}
-            />
-          </Fragment>
+          <Text
+            text={connector.label.text}
+            x={connector.label.x - LABEL_WIDTH / 2}
+            y={connector.label.y - 16}
+            width={LABEL_WIDTH}
+            wrap="none"
+            ellipsis
+            align="center"
+            fontFamily={exportTheme?.fontFamily || BOARD.fontFamily}
+            fontSize={10}
+            fill="#4E6E77"
+            listening={false}
+          />
         )}
       </Group>
     );

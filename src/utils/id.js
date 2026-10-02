@@ -6,7 +6,7 @@ export function generateId(prefix = '') {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
       return prefix ? `${prefix}_${crypto.randomUUID()}` : crypto.randomUUID();
     }
-  } catch (err) {
+  } catch {
     // fall through to manual fallback
   }
   const rand = () =>

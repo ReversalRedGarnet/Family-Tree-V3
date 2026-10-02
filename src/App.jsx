@@ -30,7 +30,7 @@ import {
 } from './utils/generations';
 import { exportAsPng, exportAsPdf } from './utils/exportTree';
 import { saveGraph, downloadRawSave } from './utils/storage';
-import { formatName } from './utils/names';
+import { formatName, nameById } from './utils/names';
 import { MOBILE_BREAKPOINT, exportThemeFor } from './utils/constants';
 
 const CLOSED_MENU = { open: false, x: 0, y: 0, items: [] };
@@ -181,13 +181,7 @@ export default function App() {
   }, [people, relationships, pushToast, loadIssue, saveBlocked]);
 
   const closeMenu = useCallback(() => setContextMenu(CLOSED_MENU), []);
-  const nameOf = useCallback(
-    (id) => {
-      const p = people[id];
-      return p ? formatName(p) : 'Someone';
-    },
-    [people]
-  );
+  const nameOf = useCallback((id) => nameById(people, id), [people]);
 
   // ---------- People ----------
 
@@ -240,7 +234,7 @@ export default function App() {
         },
       });
     },
-    [people, tree, pushToast, nameOf, deleteImpactText]
+    [people, tree, pushToast, nameOf, askConfirm, deleteImpactText]
   );
 
   const requestDeleteSelected = useCallback(() => {
@@ -363,7 +357,7 @@ export default function App() {
 
       commitPersonSave(formData);
     },
-    [personModal, people, commitPersonSave]
+    [personModal, people, commitPersonSave, askConfirm]
   );
 
   // ---------- Relationships ----------
@@ -420,7 +414,7 @@ export default function App() {
         onCancel: () => askAboutSharedChildren(rest, accepted),
       });
     },
-    [tree, pushToast, nameOf]
+    [tree, pushToast, nameOf, askConfirm]
   );
 
   // Saving the link dialog in edit mode: only the link's own details change.
@@ -576,7 +570,7 @@ export default function App() {
         },
       });
     },
-    [people, relationships, tree, pushToast, nameOf]
+    [people, relationships, tree, pushToast, nameOf, askConfirm]
   );
 
   const handleConflictClick = useCallback(
@@ -743,7 +737,7 @@ export default function App() {
         pushToast('Board cleared.', 'success', 2200);
       },
     });
-  }, [tree, pushToast]);
+  }, [tree, pushToast, askConfirm]);
 
   // ---------- Keyboard ----------
 

@@ -74,7 +74,7 @@ export default function ContextMenu({ open, x, y, items, onClose }) {
   const onKeyDown = (e) => {
     const buttons = itemButtons(menuRef.current);
     const i = buttons.indexOf(document.activeElement);
-    let next = null;
+    let next;
     if (e.key === 'ArrowDown') next = buttons[(i + 1) % buttons.length];
     else if (e.key === 'ArrowUp') next = buttons[i === -1 ? buttons.length - 1 : (i - 1 + buttons.length) % buttons.length];
     else if (e.key === 'Home') next = buttons[0];

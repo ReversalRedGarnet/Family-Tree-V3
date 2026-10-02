@@ -1,7 +1,7 @@
 // Talks to Drive directly over fetch — no gapi client library, since that
 // would be a lot of weight for three REST calls (list, get, upload) that
 // are simple enough to make by hand.
-import { GOOGLE_DRIVE_SCOPE, DRIVE_FILE_NAME } from './driveConfig';
+import { DRIVE_FILE_NAME } from './driveConfig';
 import { SAVE_VERSION } from './storage';
 
 const FILES_URL = 'https://www.googleapis.com/drive/v3/files';
@@ -118,5 +118,3 @@ export async function uploadAppDataFile(token, fileId, payload) {
   });
   return res.json();
 }
-
-export { GOOGLE_DRIVE_SCOPE };

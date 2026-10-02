@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { GOOGLE_CLIENT_ID, isConfigured } from '../utils/driveConfig';
+import { GOOGLE_CLIENT_ID, GOOGLE_DRIVE_SCOPE, isConfigured } from '../utils/driveConfig';
 import {
-  GOOGLE_DRIVE_SCOPE,
   decideSyncAction,
   findAppDataFile,
   downloadAppDataFile,
   uploadAppDataFile,
 } from '../utils/driveSync';
-import { SAVE_VERSION, sanitizeGraph } from '../utils/storage';
+import { SAVE_VERSION, hasStorage, sanitizeGraph } from '../utils/storage';
 
 const FLAG_KEY = 'family-tree/drive-sync/v1';
 export const PUSH_DEBOUNCE_MS = 2500;
@@ -30,14 +29,6 @@ export const PUSH_RETRY_MAX_MS = 80000;
 function pushRetryDelay(attempt) {
   const base = Math.min(PUSH_RETRY_BASE_MS * 2 ** (attempt - 1), PUSH_RETRY_MAX_MS);
   return base + Math.random() * 1000;
-}
-
-function hasStorage() {
-  try {
-    return typeof window !== 'undefined' && !!window.localStorage;
-  } catch {
-    return false;
-  }
 }
 
 // What THIS device remembers about its own sync history — never the tree
@@ -295,7 +286,8 @@ export function useDriveSync({ people, relationships, replaceGraph, pushToast })
       setConflict({ driveSavedAt: remote.modifiedTime, fileId: remote.id });
       return action;
     },
-    [people, relationships, replaceGraph, pushToast]
+    // The tree is read through latestGraphRef, never from a closure.
+    [replaceGraph, pushToast]
   );
 
   const signIn = useCallback(async () => {

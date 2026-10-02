@@ -5,6 +5,8 @@ export default {
     extend: {
       colors: {
         paper: '#F6FAFB',      // the board — soft off-white with a cyan cast
+        // Unused as a colour, but it also turns `shadow-card` into a white
+        // shadow colour; removing it would change how shadows look (AUDIT F12).
         card: '#FFFFFF',
         ink: '#103A44',        // deep teal-ink, never pure black
         // Secondary text. 4.9:1 on cyan-wash, 5.2:1 on paper, 5.5:1 on white.
@@ -19,24 +21,15 @@ export default {
         // 5.7:1 against white -- clears WCAG AA's 4.5:1 text minimum with
         // real margin (the previous #E86A6A only reached 3.13:1).
         rose: '#B83A3A',
-        slate: {
-          quiet: '#7A9299',    // deceased / sibling lines
-        },
       },
       fontFamily: {
         // One family across the whole app. The tail is a browser fallback
         // only — see the licensing note in index.html.
         display: ['"Proxima Nova"', 'proxima-nova', 'system-ui', 'sans-serif'],
-        body: ['"Proxima Nova"', 'proxima-nova', 'system-ui', 'sans-serif'],
-        mono: ['"Proxima Nova"', 'proxima-nova', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
         card: '0 1px 2px rgba(16,58,68,0.06), 0 6px 16px rgba(16,58,68,0.08)',
         lift: '0 4px 12px rgba(16,58,68,0.10), 0 16px 40px rgba(16,58,68,0.14)',
-        rail: '1px 0 0 rgba(16,58,68,0.08)',
-      },
-      borderRadius: {
-        xl2: '1.25rem',
       },
     },
   },

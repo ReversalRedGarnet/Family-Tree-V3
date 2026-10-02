@@ -18,6 +18,9 @@ import {
   LINE_DROP_TOLERANCE,
   TOUCH_LINE_DROP_TOLERANCE,
   TOUCH_OVERLAP_THRESHOLD,
+  BOARD_PADDING,
+  ZOOM_BUTTON_STEP,
+  MARQUEE_THRESHOLD,
   shapeForGender,
 } from '../utils/constants';
 import { buildConnectors, findConnectorAt } from '../utils/connectors';
@@ -31,8 +34,6 @@ import {
   startingPerson,
 } from '../utils/boardNav';
 import { createLongPress } from '../utils/longPress';
-
-const PAD = 140;
 
 // A touch-originated drag needs the wider, touch-tuned tolerances; a
 // mouse-originated one keeps the tighter mouse ones. Checked once, at the
@@ -258,10 +259,10 @@ const Canvas = forwardRef(function Canvas(
     const list = Object.values(positions);
     if (!list.length) return { minX: 0, minY: 0, maxX: 900, maxY: 600 };
     return {
-      minX: Math.min(...list.map((p) => p.x)) - CARD_WIDTH / 2 - PAD,
-      maxX: Math.max(...list.map((p) => p.x)) + CARD_WIDTH / 2 + PAD,
-      minY: Math.min(...list.map((p) => p.y)) - CARD_HEIGHT / 2 - PAD,
-      maxY: Math.max(...list.map((p) => p.y)) + CARD_HEIGHT / 2 + PAD,
+      minX: Math.min(...list.map((p) => p.x)) - CARD_WIDTH / 2 - BOARD_PADDING,
+      maxX: Math.max(...list.map((p) => p.x)) + CARD_WIDTH / 2 + BOARD_PADDING,
+      minY: Math.min(...list.map((p) => p.y)) - CARD_HEIGHT / 2 - BOARD_PADDING,
+      maxY: Math.max(...list.map((p) => p.y)) + CARD_HEIGHT / 2 + BOARD_PADDING,
     };
   }, [positions]);
 
@@ -500,11 +501,9 @@ const Canvas = forwardRef(function Canvas(
     }));
   }, [handlePanMouseMove]);
 
-  // How far the pointer has to move from mousedown before a candidate
-  // marquee actually shows up and starts selecting — below this, it reads
-  // as a plain click (which Konva's own click handling already treats as
-  // "deselect everyone", the same as it always has).
-  const MARQUEE_THRESHOLD = 4;
+  // Below MARQUEE_THRESHOLD of movement, a mousedown on the empty board
+  // reads as a plain click (which Konva's own click handling already treats
+  // as "deselect everyone", the same as it always has).
 
   const finishMarqueeSelection = useCallback(
     (rect) => {
@@ -567,7 +566,7 @@ const Canvas = forwardRef(function Canvas(
     marqueeRectRef.current = null;
     setMarqueeRect(null);
     if (rect) finishMarqueeSelection(rect);
-  }, [finishMarqueeSelection]);
+  }, [finishMarqueeSelection, handleMarqueeMouseMove]);
 
   const handleStageMouseDown = useCallback(
     (e) => {
@@ -606,22 +605,74 @@ const Canvas = forwardRef(function Canvas(
     [relationships, positions]
   );
 
-  const findOverlapTarget = useCallback(
-    (draggedId, x, y) => {
-      let best = null;
-      let bestScore = touchDrag ? TOUCH_OVERLAP_THRESHOLD : OVERLAP_THRESHOLD;
-      Object.entries(people).forEach(([id, other]) => {
-        if (id === draggedId) return;
-        const score = overlapFraction(x, y, other.position?.x ?? 0, other.position?.y ?? 0);
-        if (score > bestScore) {
-          bestScore = score;
-          best = id;
-        }
-      });
-      return best;
-    },
-    [people, touchDrag]
-  );
+  // Everything the card handlers below read, as of the latest render. The
+  // handlers read it from here rather than closing over it, so they keep
+  // one identity for the life of the board: PersonNode is memoised, and
+  // handlers that changed with every edit made every card re-render after
+  // every commit (AUDIT L16).
+  const latest = useRef(null);
+  latest.current = {
+    people,
+    selectedIds,
+    connectors,
+    onSelect,
+    onEditPerson,
+    onPersonContextMenu,
+    onConflictClick,
+    onDropOverlap,
+    onDropOnConnector,
+    onMovePerson,
+    onMoveMany,
+  };
+  // Whether the drag in progress is a finger's. Set the moment it starts,
+  // so the drop checks use the right tolerances from the first move on.
+  const touchDragRef = useRef(false);
+
+  // While a card is being dragged it sits on a layer of its own, so each
+  // move redraws that card alone, not every card and line on the board
+  // (AUDIT L17). It goes back to its exact place in the board's layer when
+  // the drag ends, so the drawing order never changes.
+  const dragLayerRef = useRef(null);
+  const draggedHomeRef = useRef(null);
+
+  const liftOntoDragLayer = useCallback((nodes) => {
+    const dragLayer = dragLayerRef.current;
+    if (!dragLayer) return;
+    const home = nodes
+      .filter(Boolean)
+      .map((node) => ({ node, layer: node.getLayer(), index: node.zIndex() }))
+      .filter((h) => h.layer && h.layer !== dragLayer)
+      .sort((a, b) => a.index - b.index);
+    home.forEach(({ node }) => node.moveTo(dragLayer));
+    draggedHomeRef.current = home;
+  }, []);
+
+  const putBackFromDragLayer = useCallback(() => {
+    const home = draggedHomeRef.current;
+    draggedHomeRef.current = null;
+    if (!home) return;
+    // Lowest index first, so each one's index is valid when it's set.
+    home.forEach(({ node, layer, index }) => {
+      node.moveTo(layer);
+      node.zIndex(Math.min(index, layer.getChildren().length - 1));
+    });
+    home[0]?.layer.batchDraw();
+    dragLayerRef.current?.batchDraw();
+  }, []);
+
+  const findOverlapTarget = useCallback((draggedId, x, y) => {
+    let best = null;
+    let bestScore = touchDragRef.current ? TOUCH_OVERLAP_THRESHOLD : OVERLAP_THRESHOLD;
+    Object.entries(latest.current.people).forEach(([id, other]) => {
+      if (id === draggedId) return;
+      const score = overlapFraction(x, y, other.position?.x ?? 0, other.position?.y ?? 0);
+      if (score > bestScore) {
+        bestScore = score;
+        best = id;
+      }
+    });
+    return best;
+  }, []);
 
   // A drop is read as one thing or the other, never both. Landing on a card
   // is the more specific gesture, so it is asked first: two people
@@ -631,12 +682,12 @@ const Canvas = forwardRef(function Canvas(
     (draggedId, x, y) => {
       const personId = findOverlapTarget(draggedId, x, y);
       if (personId) return { kind: 'person', personId };
-      const tolerance = touchDrag ? TOUCH_LINE_DROP_TOLERANCE : LINE_DROP_TOLERANCE;
-      const connector = findConnectorAt(connectors, x, y, tolerance, draggedId);
+      const tolerance = touchDragRef.current ? TOUCH_LINE_DROP_TOLERANCE : LINE_DROP_TOLERANCE;
+      const connector = findConnectorAt(latest.current.connectors, x, y, tolerance, draggedId);
       if (connector) return { kind: 'connector', connector };
       return null;
     },
-    [findOverlapTarget, connectors, touchDrag]
+    [findOverlapTarget]
   );
 
   // Dragging one card out of a multi-selection (more than one person
@@ -646,9 +697,11 @@ const Canvas = forwardRef(function Canvas(
   // delta so far" applied to each of them.
   const handleDragStart = useCallback(
     (personId, e) => {
+      const { people, selectedIds } = latest.current;
       // Moving the card means it wasn't a hold.
       longPressRef.current.cancel();
-      setTouchDrag(isTouchEvent(e?.evt));
+      touchDragRef.current = isTouchEvent(e?.evt);
+      setTouchDrag(touchDragRef.current);
       if (selectedIds.length > 1 && selectedIds.includes(personId)) {
         const anchor = people[personId]?.position;
         groupDragRef.current = {
@@ -658,11 +711,13 @@ const Canvas = forwardRef(function Canvas(
             .filter((id) => id !== personId)
             .map((id) => ({ id, x: people[id]?.position?.x ?? 0, y: people[id]?.position?.y ?? 0 })),
         };
+        liftOntoDragLayer([e?.target, ...groupDragRef.current.others.map((o) => nodeRefs.current[o.id])]);
       } else {
         groupDragRef.current = null;
+        liftOntoDragLayer([e?.target]);
       }
     },
-    [selectedIds, people]
+    [liftOntoDragLayer]
   );
 
   const handleDragMove = useCallback(
@@ -680,7 +735,8 @@ const Canvas = forwardRef(function Canvas(
           const node = nodeRefs.current[o.id];
           if (node) node.position({ x: o.x + dx, y: o.y + dy });
         });
-        stageRef.current?.batchDraw();
+        // They're all on the drag layer, so only it needs redrawing.
+        dragLayerRef.current?.batchDraw();
         return;
       }
 
@@ -704,9 +760,12 @@ const Canvas = forwardRef(function Canvas(
       // Doing it here, before React re-renders, means a card never flickers
       // at the point it was let go -- and a prop that ends up unchanged
       // (dropped back on its own spot) can't leave the node stranded there.
+      const { people, onDropOverlap, onDropOnConnector, onMovePerson, onMoveMany } = latest.current;
+      putBackFromDragLayer();
       const group = groupDragRef.current;
       if (group && group.anchorId === personId) {
         groupDragRef.current = null;
+        touchDragRef.current = false;
         setTouchDrag(false);
         node?.position(group.anchorStart);
         group.others.forEach((o) => nodeRefs.current[o.id]?.position({ x: o.x, y: o.y }));
@@ -725,9 +784,12 @@ const Canvas = forwardRef(function Canvas(
 
       setHoverTargetId(null);
       setHoverConnectorKey(null);
-      setTouchDrag(false);
 
+      // Read before the drag is marked over: a touch drop is judged with
+      // the touch tolerances, exactly like the moves before it.
       const drop = findDropTarget(personId, x, y);
+      touchDragRef.current = false;
+      setTouchDrag(false);
       const origin = people[personId]?.position;
       if (origin && node) {
         node.position({ x: origin.x, y: origin.y });
@@ -746,7 +808,7 @@ const Canvas = forwardRef(function Canvas(
       if (!origin || Math.abs(x - origin.x) < 2) return;
       onMovePerson(personId, x);
     },
-    [findDropTarget, people, onDropOverlap, onDropOnConnector, onMovePerson, onMoveMany]
+    [findDropTarget, putBackFromDragLayer]
   );
 
   // ---- Person-level events ----
@@ -768,9 +830,9 @@ const Canvas = forwardRef(function Canvas(
     (personId, e) => {
       if (endsLongPress(e, longPressRef.current)) return;
       setCurrentId(personId);
-      onSelect(personId, e.evt.shiftKey || e.evt.metaKey || isTouchEvent(e.evt));
+      latest.current.onSelect(personId, e.evt.shiftKey || e.evt.metaKey || isTouchEvent(e.evt));
     },
-    [onSelect]
+    []
   );
 
   // Android sends its own `contextmenu` for a held finger. Whichever of
@@ -792,10 +854,13 @@ const Canvas = forwardRef(function Canvas(
       e.evt.preventDefault();
       e.cancelBubble = true;
       if (menuAlreadyOpenedByHold(personId)) return;
-      onPersonContextMenu(personId, e.evt.clientX, e.evt.clientY);
+      latest.current.onPersonContextMenu(personId, e.evt.clientX, e.evt.clientY);
     },
-    [onPersonContextMenu, menuAlreadyOpenedByHold]
+    [menuAlreadyOpenedByHold]
   );
+
+  const handlePersonDblClick = useCallback((personId) => latest.current.onEditPerson(personId), []);
+  const handleConflictBadgeClick = useCallback((personId) => latest.current.onConflictClick?.(personId), []);
 
   // ---- Stage-level events ----
 
@@ -905,7 +970,7 @@ const Canvas = forwardRef(function Canvas(
   const handleBoardFocus = useCallback(
     (e) => {
       if (e.target !== e.currentTarget) return;
-      let fromKeyboard = false;
+      let fromKeyboard;
       try {
         fromKeyboard = e.currentTarget.matches(':focus-visible');
       } catch {
@@ -1036,9 +1101,9 @@ const Canvas = forwardRef(function Canvas(
               onDragMove={handleDragMove}
               onDragEnd={handleDragEnd}
               onClick={handlePersonClick}
-              onDblClick={onEditPerson}
+              onDblClick={handlePersonDblClick}
               onContextMenu={handlePersonContextMenu}
-              onConflictClick={onConflictClick}
+              onConflictClick={handleConflictBadgeClick}
               exportTheme={exportTheme}
             />
           ))}
@@ -1095,6 +1160,9 @@ const Canvas = forwardRef(function Canvas(
             />
           )}
         </Layer>
+        {/* Holds only the card(s) being dragged; empty otherwise. Export
+            captures the first layer only, so it never shows up there. */}
+        <Layer ref={dragLayerRef} />
       </Stage>
 
       {/* Touch-drag only: says in words what the hover highlight can't,
@@ -1127,13 +1195,13 @@ const Canvas = forwardRef(function Canvas(
 
       {/* Zoom pod. Also the touch fallback for people who can't scroll-zoom. */}
       <div className="absolute bottom-4 right-4 flex items-center gap-0.5 rounded-xl border border-hairline bg-white/95 p-1 shadow-card backdrop-blur">
-        <ZoomButton label="Zoom out" onClick={() => zoomAround(1 / 1.2, size.width / 2, size.height / 2)}>
+        <ZoomButton label="Zoom out" onClick={() => zoomAround(1 / ZOOM_BUTTON_STEP, size.width / 2, size.height / 2)}>
           <span className="text-lg leading-none">−</span>
         </ZoomButton>
         <span className="tnum w-11 select-none text-center text-xs text-mist">
           {Math.round(view.scale * 100)}%
         </span>
-        <ZoomButton label="Zoom in" onClick={() => zoomAround(1.2, size.width / 2, size.height / 2)}>
+        <ZoomButton label="Zoom in" onClick={() => zoomAround(ZOOM_BUTTON_STEP, size.width / 2, size.height / 2)}>
           <span className="text-lg leading-none">+</span>
         </ZoomButton>
         <div className="mx-0.5 h-5 w-px bg-hairline" />

@@ -1,10 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import Tooltip from './Tooltip';
 import Legend from './Legend';
-
-function fullName(person) {
-  return `${person.firstName || 'Unnamed'} ${person.lastName || ''}`.trim();
-}
+import { cardName } from '../utils/names';
 
 function Action({ label, detail, onClick, disabled, tone = 'quiet', children, collapsed }) {
   const tones = {
@@ -191,7 +188,7 @@ export default function Sidebar({
     });
     return [...groups.entries()]
       .sort((a, b) => a[0] - b[0])
-      .map(([gen, list]) => [gen, list.sort((a, b) => fullName(a).localeCompare(fullName(b)))]);
+      .map(([gen, list]) => [gen, list.sort((a, b) => cardName(a).localeCompare(cardName(b)))]);
   }, [people, generation]);
 
   const personCount = Object.keys(people).length;
@@ -326,8 +323,8 @@ export default function Sidebar({
                         title="Tap to select · double-tap to edit · tap a second person to select both"
                         className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left text-sm"
                       >
-                        <span className="flex-1 truncate" title={fullName(person)}>
-                          {fullName(person)}
+                        <span className="flex-1 truncate" title={cardName(person)}>
+                          {cardName(person)}
                         </span>
                         {person.living === false && (
                           <span
@@ -344,7 +341,7 @@ export default function Sidebar({
                           const rect = e.currentTarget.getBoundingClientRect();
                           onPersonMenu(person.id, rect.right, rect.bottom);
                         }}
-                        aria-label={`Actions for ${fullName(person)}`}
+                        aria-label={`Actions for ${cardName(person)}`}
                         aria-haspopup="menu"
                         title="Add a parent, child, sibling, or delete"
                         className={`shrink-0 rounded-lg px-2 py-1.5 text-sm transition-colors ${

@@ -13,7 +13,7 @@ const BACKUP_PREFIX = `${STORAGE_KEY}/backup-`;
 // aside under a backup key instead (see loadGraph).
 export const SAVE_VERSION = 1;
 
-function hasStorage() {
+export function hasStorage() {
   try {
     return typeof window !== 'undefined' && !!window.localStorage;
   } catch {

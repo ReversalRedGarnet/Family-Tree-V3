@@ -67,7 +67,7 @@ async function captureBoard(stage) {
 
   for (const limits of CANVAS_LIMITS) {
     const pixelRatio = computeExportScale(crop.width, crop.height, limits);
-    let canvas = null;
+    let canvas;
     try {
       canvas = withNeutralView(stage, () => layer.toCanvas({ ...crop, pixelRatio }));
     } catch {

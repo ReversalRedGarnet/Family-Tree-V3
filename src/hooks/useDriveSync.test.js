@@ -336,7 +336,6 @@ describe('useDriveSync routine autosync retry/backoff', () => {
       await vi.advanceTimersByTimeAsync(PUSH_DEBOUNCE_MS);
     });
     for (let i = 1; i < PUSH_MAX_ATTEMPTS; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
       await act(async () => {
         await vi.advanceTimersByTimeAsync(PUSH_RETRY_MAX_MS);
       });

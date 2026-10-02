@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import Modal from './Modal';
-import Tooltip, { InfoDot } from './Tooltip';
+import Tooltip from './Tooltip';
 import {
   GENDERS,
   COLOR_THEMES,
@@ -10,26 +10,10 @@ import {
   SIBLING_TYPES,
 } from '../utils/constants';
 import { formatName } from '../utils/names';
+import { FIELD, Label, YearInput } from './FormFields';
 
-const field =
-  'w-full rounded-xl border border-hairline bg-white px-3 py-2.5 text-sm text-ink transition-colors placeholder:text-mist focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/30';
-
-// Inside a wrapping <label>, pass no htmlFor. A field with a hint must
-// instead pass its input's id as htmlFor: the (i) button then sits beside
-// a real <label>, not inside one, where it would take the field's name.
-function Label({ children, hint, htmlFor }) {
-  return (
-    <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-mist">
-      {htmlFor ? <label htmlFor={htmlFor}>{children}</label> : children}
-      {hint && <InfoDot label={hint} />}
-      {hint && htmlFor && (
-        <span id={`${htmlFor}-hint`} className="sr-only">
-          {hint}
-        </span>
-      )}
-    </span>
-  );
-}
+// This form's fields also tint their placeholder text.
+const field = `${FIELD} placeholder:text-mist`;
 
 // The three zones from the design, each introduced by an eyebrow and split
 // by a dotted rule.
@@ -99,26 +83,9 @@ function labelFor(rel, otherName) {
   return `${rel.label || 'Other'} · ${otherName}`;
 }
 
-// Years only. Strips anything that isn't a digit so the field can't hold
-// something the tree won't be able to read back. Approximate dates are
-// deliberately not supported; the hint below the field says so, and where
-// to put a "circa" instead.
+// Approximate dates are deliberately not supported; the hint below each
+// year field says so, and where to put a "circa" instead.
 const YEAR_HINT = 'Digits only, like 1953. Not sure? Give your best guess, or leave it blank and write "about 1890" in Notes.';
-
-function YearInput({ value, onChange, placeholder, describedBy }) {
-  return (
-    <input
-      type="text"
-      inputMode="numeric"
-      maxLength={4}
-      value={value || ''}
-      placeholder={placeholder}
-      aria-describedby={describedBy}
-      onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 4))}
-      className={field}
-    />
-  );
-}
 
 function formValues(person) {
   return {
@@ -274,6 +241,7 @@ export default function PersonModal({
             onChange={(v) => set('birthYear', v)}
             placeholder="1953"
             describedBy={yearHintId}
+            className={field}
           />
           <span id={yearHintId} className="mt-1 block text-xs leading-snug text-mist">
             {YEAR_HINT}
@@ -334,6 +302,7 @@ export default function PersonModal({
               onChange={(v) => set('deathYear', v)}
               placeholder="2011"
               describedBy={`${yearHintId}-death`}
+              className={field}
             />
             <span id={`${yearHintId}-death`} className="mt-1 block text-xs leading-snug text-mist">
               {YEAR_HINT}

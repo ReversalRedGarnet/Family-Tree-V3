@@ -1,6 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import Modal from './Modal';
-import { InfoDot } from './Tooltip';
 import { inferSiblingType } from '../utils/generations';
 import {
   RELATIONSHIP_KINDS,
@@ -9,45 +8,11 @@ import {
   SIBLING_TYPES,
   PARENT_TYPES,
 } from '../utils/constants';
-import { formatName } from '../utils/names';
+import { nameById } from '../utils/names';
+import { FIELD as field, Label, YearInput } from './FormFields';
 
-const field =
-  'w-full rounded-xl border border-hairline bg-white px-3 py-2.5 text-sm text-ink transition-colors focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/30';
-
-// Inside a wrapping <label>, pass no htmlFor. A field with a hint must
-// instead pass its input's id as htmlFor: the (i) button then sits beside
-// a real <label>, not inside one, where it would take the field's name.
-function Label({ children, hint, htmlFor }) {
-  return (
-    <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-mist">
-      {htmlFor ? <label htmlFor={htmlFor}>{children}</label> : children}
-      {hint && <InfoDot label={hint} />}
-      {hint && htmlFor && (
-        <span id={`${htmlFor}-hint`} className="sr-only">
-          {hint}
-        </span>
-      )}
-    </span>
-  );
-}
-
-// Years only. Strips anything that isn't a digit, same rule as the year
-// fields on the person form.
-function YearInput({ value, onChange, placeholder, disabled, describedBy }) {
-  return (
-    <input
-      type="text"
-      inputMode="numeric"
-      maxLength={4}
-      value={value || ''}
-      placeholder={placeholder}
-      aria-describedby={describedBy}
-      disabled={disabled}
-      onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 4))}
-      className={`${field} disabled:bg-paper disabled:text-mist`}
-    />
-  );
-}
+// "Year ended" is greyed out while a couple is still together.
+const yearField = `${field} disabled:bg-paper disabled:text-mist`;
 
 // One dialog for every kind of link. Nothing here is a prerequisite for
 // anything else — a sibling link doesn't need parents, a child doesn't need
@@ -124,10 +89,7 @@ export default function RelationshipModal({
 
   if (!open) return null;
 
-  const nameOf = (id) => {
-    const p = people[id];
-    return p ? formatName(p) : 'Someone';
-  };
+  const nameOf = (id) => nameById(people, id);
 
   const a = swapped ? personB : personA;
   const b = swapped ? personA : personB;
@@ -282,6 +244,7 @@ export default function RelationshipModal({
                   onChange={setStartDate}
                   placeholder="1998"
                   describedBy={`${fieldId}-years-hint`}
+                  className={yearField}
                 />
               </label>
               <label className="block">
@@ -292,6 +255,7 @@ export default function RelationshipModal({
                   placeholder="2015"
                   disabled={together}
                   describedBy={`${fieldId}-years-hint`}
+                  className={yearField}
                 />
               </label>
             </div>
