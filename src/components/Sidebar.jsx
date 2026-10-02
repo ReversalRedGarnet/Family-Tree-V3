@@ -62,7 +62,8 @@ function Section({ title, hint, children, defaultOpen = true }) {
 function SyncStatus({ drive }) {
   if (!drive.configured) return null;
 
-  const { status, conflict, failedResolution, lastSyncedAt, signIn, signOut, retryResolveConflict } = drive;
+  const { status, conflict, failedResolution, lastSyncedAt, canReconnect, reconnect, signIn, signOut, retryResolveConflict } =
+    drive;
 
   // Relies on useDriveSync always clearing `conflict` before it ever lands
   // on status 'error' -- a failed conflict RESOLUTION (as opposed to a
@@ -81,8 +82,15 @@ function SyncStatus({ drive }) {
     // outright (an actually expired or revoked token, say), which needs a
     // fresh handshake rather than a repeat of a request that's genuinely
     // not going to succeed.
-    const primaryLabel = failedResolution ? 'Try that again' : 'Sign in with Google to sync across devices';
-    const primaryAction = failedResolution ? retryResolveConflict : signIn;
+    // A device that was signed in before reconnects with one click and no
+    // consent screen. Nothing reaches Google until one of these is clicked.
+    const reconnecting = !failedResolution && canReconnect && status === 'signed-out';
+    const primaryLabel = failedResolution
+      ? 'Try that again'
+      : reconnecting
+        ? 'Reconnect to Google Drive'
+        : 'Sign in with Google to sync across devices';
+    const primaryAction = failedResolution ? retryResolveConflict : reconnecting ? reconnect : signIn;
 
     return (
       <div className="mb-3 rounded-xl border border-hairline bg-paper px-3 py-2.5">
@@ -92,6 +100,11 @@ function SyncStatus({ drive }) {
         >
           {primaryLabel}
         </button>
+        {reconnecting && (
+          <p className="mt-1.5 px-1 text-[11px] leading-snug text-mist">
+            Drive sync is paused until you reconnect. Changes are still saved in this browser.
+          </p>
+        )}
         {status === 'error' && drive.errorMessage && (
           <p className="mt-1.5 px-1 text-[11px] leading-snug text-rose">{drive.errorMessage}</p>
         )}

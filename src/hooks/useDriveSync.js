@@ -72,25 +72,45 @@ function writeFlags(flags) {
   }
 }
 
-// The GIS script tag in index.html loads asynchronously, so `window.google`
-// may not exist yet the moment this hook mounts. Waited for here rather
-// than assumed — an ad blocker or a firewalled network can keep it from
-// ever arriving, and that's a real, not hypothetical, way for this feature
-// to fail quietly if nothing checked.
-function waitForGoogleIdentity() {
+// Google's sign-in script is not in index.html. It's added here, the first
+// time a Drive control is actually clicked, so a visit that never touches
+// Drive (and every visit while Drive isn't configured) sends nothing to
+// Google at all. An ad blocker or a firewalled network can keep it from
+// ever arriving, so it's waited for with a timeout, and a failed attempt
+// can be retried by clicking again.
+export const GOOGLE_IDENTITY_SRC = 'https://accounts.google.com/gsi/client';
+let googleIdentityPromise = null;
+
+export function loadGoogleIdentity() {
   if (window.google?.accounts?.oauth2) return Promise.resolve(window.google);
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    const poll = setInterval(() => {
-      if (window.google?.accounts?.oauth2) {
-        clearInterval(poll);
-        resolve(window.google);
-      } else if (Date.now() - start > SCRIPT_WAIT_TIMEOUT_MS) {
-        clearInterval(poll);
-        reject(new Error('Could not reach Google — check your connection or ad blocker.'));
+  if (googleIdentityPromise) return googleIdentityPromise;
+
+  googleIdentityPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = GOOGLE_IDENTITY_SRC;
+    script.async = true;
+    const fail = () => {
+      clearTimeout(timer);
+      script.remove();
+      googleIdentityPromise = null;
+      reject(new Error('Could not reach Google — check your connection or ad blocker.'));
+    };
+    const timer = setTimeout(fail, SCRIPT_WAIT_TIMEOUT_MS);
+    script.onerror = fail;
+    script.onload = () => {
+      clearTimeout(timer);
+      if (!window.google?.accounts?.oauth2) {
+        fail();
+        return;
       }
-    }, 150);
+      // Only an in-flight load is shared; once loaded, the window.google
+      // check at the top answers every later call.
+      googleIdentityPromise = null;
+      resolve(window.google);
+    };
+    document.head.appendChild(script);
   });
+  return googleIdentityPromise;
 }
 
 function requestToken(tokenClient, prompt) {
@@ -150,10 +170,19 @@ export function useDriveSync({ people, relationships, replaceGraph, pushToast })
   // arriving mid-backoff.
   const pushRetryTimerRef = useRef(null);
   const readyRef = useRef(false); // true once the initial handshake (or its conflict) has resolved
+  // The tree as it is right now. A handshake spends a while waiting on the
+  // network, and the person can keep editing meanwhile; every decision in
+  // it reads this instead of the values it started with.
+  const latestGraphRef = useRef({ people, relationships });
+  latestGraphRef.current = { people, relationships };
+  // This device signed in before. Sync then resumes with one click on
+  // "Reconnect" (no consent screen), never by itself on page load: loading
+  // Google's script on load is exactly what this avoids.
+  const [canReconnect, setCanReconnect] = useState(() => driveSyncConfigured && readFlags().signedIn);
 
   const ensureTokenClient = useCallback(async () => {
     if (tokenClientRef.current) return tokenClientRef.current;
-    const google = await waitForGoogleIdentity();
+    const google = await loadGoogleIdentity();
     tokenClientRef.current = google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
       scope: GOOGLE_DRIVE_SCOPE,
@@ -177,7 +206,7 @@ export function useDriveSync({ people, relationships, replaceGraph, pushToast })
       fileIdRef.current = remote?.id || null;
       const flags = readFlags();
 
-      const localHasContent = !emptyGraph(people, relationships);
+      const localHasContent = !emptyGraph(latestGraphRef.current.people, latestGraphRef.current.relationships);
       const driveHasContent = Boolean(remote);
 
       const action = decideSyncAction({
@@ -194,6 +223,15 @@ export function useDriveSync({ people, relationships, replaceGraph, pushToast })
 
       if (action === 'download') {
         const payload = readDrivePayload(await downloadAppDataFile(token, remote.id));
+        // The download took time too. If anything was added on this device
+        // meanwhile, there is now something to lose: ask instead of
+        // silently replacing it.
+        const latest = latestGraphRef.current;
+        if (!emptyGraph(latest.people, latest.relationships)) {
+          setFailedResolution(null);
+          setConflict({ driveSavedAt: remote.modifiedTime, fileId: remote.id });
+          return 'ask';
+        }
         // Silent: nothing on this device to lose, no choice the person
         // actually made, so this must not become an undo step -- see the
         // comment on replaceGraph in useFamilyTree.js.
@@ -208,11 +246,13 @@ export function useDriveSync({ people, relationships, replaceGraph, pushToast })
 
       if (action === 'upload') {
         const saved = await uploadAppDataFile(token, fileIdRef.current, {
-          people,
-          relationships,
+          people: latestGraphRef.current.people,
+          relationships: latestGraphRef.current.relationships,
           savedAt: new Date().toISOString(),
         });
         fileIdRef.current = saved.id;
+        // Drive's clock (uploads ask for modifiedTime); this device's clock
+        // only if Drive somehow leaves it out.
         const syncedAt = saved.modifiedTime || new Date().toISOString();
         setLastSyncedAt(syncedAt);
         writeFlags({ signedIn: true, fileId: saved.id, lastSyncedAt: syncedAt });
@@ -259,43 +299,27 @@ export function useDriveSync({ people, relationships, replaceGraph, pushToast })
   // one): a browser blocking third-party storage, or the user revoking
   // access elsewhere, makes it fail, and the only fallback is showing the
   // "Sign in" button again rather than anything that fails loudly.
-  useEffect(() => {
-    if (!driveSyncConfigured) return;
-    const flags = readFlags();
-    if (!flags.signedIn) return;
-
-    let cancelled = false;
-    (async () => {
-      setStatus('connecting');
-      try {
-        const client = await ensureTokenClient();
-        const token = await requestToken(client, '');
-        if (cancelled) return;
-        tokenRef.current = token;
-        const action = await runHandshake(token);
-        // Same reasoning as signIn() above: landing on 'ask' means a
-        // decision is now pending, which is a real settled state of its
-        // own, not "still connecting" -- leaving status on 'connecting'
-        // here is exactly the stuck-status version of the resolveConflict
-        // bug this whole area is being fixed for.
-        if (!cancelled) setStatus(action === 'ask' ? 'conflict' : 'signed-in');
-      } catch {
-        if (!cancelled) {
-          // Silent reauth failing is routine, not an error the person did
-          // anything to cause — fall back to signed-out quietly rather
-          // than surfacing a scary message for something they can fix
-          // just by clicking "Sign in" again.
-          setStatus('signed-out');
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // Deliberately once on mount — re-running this on every people/
-    // relationships change would re-attempt reauth on every edit.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Clicked "Reconnect": the same popup-free reauth that used to run by
+  // itself on page load. Only a click starts it, so Google's script is
+  // never loaded just because the page opened.
+  const reconnect = useCallback(async () => {
+    setStatus('connecting');
+    setErrorMessage(null);
+    try {
+      const client = await ensureTokenClient();
+      const token = await requestToken(client, '');
+      tokenRef.current = token;
+      const action = await runHandshake(token);
+      // Same reasoning as signIn() above: 'ask' is a settled state of its
+      // own, not "still connecting".
+      setStatus(action === 'ask' ? 'conflict' : 'signed-in');
+    } catch {
+      // A quiet reauth failing is routine (third-party storage blocked,
+      // access revoked): offer a full sign-in instead of a scary error.
+      setCanReconnect(false);
+      setStatus('signed-out');
+    }
+  }, [ensureTokenClient, runHandshake]);
 
   // The actual work of carrying out a conflict choice, shared by a fresh
   // resolution (resolveConflict, reading from `conflict`) and a retry of one
@@ -487,6 +511,7 @@ export function useDriveSync({ people, relationships, replaceGraph, pushToast })
     setErrorMessage(null);
     setLastSyncedAt(null);
     writeFlags({ signedIn: false, fileId: null, lastSyncedAt: null });
+    setCanReconnect(false);
     setStatus('signed-out');
   }, []);
 
@@ -497,6 +522,8 @@ export function useDriveSync({ people, relationships, replaceGraph, pushToast })
     conflict,
     failedResolution,
     lastSyncedAt,
+    canReconnect,
+    reconnect,
     signIn,
     signOut,
     resolveConflict,

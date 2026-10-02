@@ -87,6 +87,12 @@ export function buildMultipartBody(metadata, contentJson, boundary) {
   );
 }
 
+// Drive's upload responses carry only kind/id/name/mimeType unless asked
+// for more. modifiedTime is asked for so "last synced" is Drive's own
+// clock, the same clock findAppDataFile reads back later -- comparing it
+// with this device's clock misjudged changes whenever the two disagreed.
+export const UPLOAD_FIELDS = 'id,modifiedTime';
+
 // Creates the file the first time (needs multipart so the name and the
 // appDataFolder parent can go alongside the content in one request), or
 // overwrites it on every call after — a simple media-only PATCH once the
@@ -95,7 +101,7 @@ export async function uploadAppDataFile(token, fileId, payload) {
   const contentJson = JSON.stringify({ version: SAVE_VERSION, ...payload });
 
   if (fileId) {
-    const res = await driveFetch(`${UPLOAD_URL}/${fileId}?uploadType=media`, token, {
+    const res = await driveFetch(`${UPLOAD_URL}/${fileId}?uploadType=media&fields=${UPLOAD_FIELDS}`, token, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: contentJson,
@@ -105,7 +111,7 @@ export async function uploadAppDataFile(token, fileId, payload) {
 
   const boundary = `family_tree_${Date.now()}`;
   const body = buildMultipartBody({ name: DRIVE_FILE_NAME, parents: ['appDataFolder'] }, contentJson, boundary);
-  const res = await driveFetch(`${UPLOAD_URL}?uploadType=multipart`, token, {
+  const res = await driveFetch(`${UPLOAD_URL}?uploadType=multipart&fields=${UPLOAD_FIELDS}`, token, {
     method: 'POST',
     headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
     body,
