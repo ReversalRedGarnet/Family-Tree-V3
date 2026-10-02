@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import Modal from './Modal';
 import { InfoDot } from './Tooltip';
 import { inferSiblingType } from '../utils/generations';
@@ -14,11 +14,19 @@ import { formatName } from '../utils/names';
 const field =
   'w-full rounded-xl border border-hairline bg-white px-3 py-2.5 text-sm text-ink transition-colors focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/30';
 
-function Label({ children, hint }) {
+// Inside a wrapping <label>, pass no htmlFor. A field with a hint must
+// instead pass its input's id as htmlFor: the (i) button then sits beside
+// a real <label>, not inside one, where it would take the field's name.
+function Label({ children, hint, htmlFor }) {
   return (
     <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-mist">
-      {children}
+      {htmlFor ? <label htmlFor={htmlFor}>{children}</label> : children}
       {hint && <InfoDot label={hint} />}
+      {hint && htmlFor && (
+        <span id={`${htmlFor}-hint`} className="sr-only">
+          {hint}
+        </span>
+      )}
     </span>
   );
 }
@@ -69,6 +77,7 @@ export default function RelationshipModal({
   const [siblingType, setSiblingType] = useState(SIBLING_TYPES[0].id);
   const [parentType, setParentType] = useState(PARENT_TYPES[0].id);
   const [label, setLabel] = useState('');
+  const fieldId = useId();
   const [deceasedId, setDeceasedId] = useState(null);
 
   // Sibling links are symmetric, so this doesn't depend on the swap toggle.
@@ -212,16 +221,25 @@ export default function RelationshipModal({
                   ))}
                 </select>
               </label>
-              <label className="block">
-                <Label hint="Changes the line style on the board — divorced lines get a break mark.">
+              <div>
+                <Label
+                  htmlFor={`${fieldId}-status`}
+                  hint="Changes the line style on the board — divorced lines get a break mark."
+                >
                   Status
                 </Label>
-                <select value={partnerStatus} onChange={(e) => setPartnerStatus(e.target.value)} className={field}>
+                <select
+                  id={`${fieldId}-status`}
+                  aria-describedby={`${fieldId}-status-hint`}
+                  value={partnerStatus}
+                  onChange={(e) => setPartnerStatus(e.target.value)}
+                  className={field}
+                >
                   {PARTNER_STATUS.map((s) => (
                     <option key={s.id} value={s.id}>{s.label}</option>
                   ))}
                 </select>
-              </label>
+              </div>
             </div>
             {needsWhoDied && (
               <fieldset className="rounded-xl border border-cyan/40 bg-cyan-wash p-3">
@@ -274,20 +292,33 @@ export default function RelationshipModal({
         )}
 
         {kind === 'parent' && (
-          <label className="block">
-            <Label hint="Anything other than a birth parent draws as a softer dashed line.">Kind of parent</Label>
-            <select value={parentType} onChange={(e) => setParentType(e.target.value)} className={field}>
+          <div>
+            <Label
+              htmlFor={`${fieldId}-parent-type`}
+              hint="Anything other than a birth parent draws as a softer dashed line."
+            >
+              Kind of parent
+            </Label>
+            <select
+              id={`${fieldId}-parent-type`}
+              aria-describedby={`${fieldId}-parent-type-hint`}
+              value={parentType}
+              onChange={(e) => setParentType(e.target.value)}
+              className={field}
+            >
               {PARENT_TYPES.map((t) => (
                 <option key={t.id} value={t.id}>{t.label}</option>
               ))}
             </select>
-          </label>
+          </div>
         )}
 
         {kind === 'sibling' && (
           <div className="space-y-2">
-            <Label hint="They'll share a row. Parents can be added later, or not at all.">Kind of siblings</Label>
-            <div className="flex gap-2">
+            <Label hint="They'll share a row. Parents can be added later, or not at all.">
+              <span id={`${fieldId}-sibling-type`}>Kind of siblings</span>
+            </Label>
+            <div className="flex gap-2" role="group" aria-labelledby={`${fieldId}-sibling-type`}>
               <button
                 type="button"
                 onClick={() => setSiblingType('full')}
@@ -321,7 +352,12 @@ export default function RelationshipModal({
             </div>
 
             {siblingType !== 'full' && (
-              <select value={siblingType} onChange={(e) => setSiblingType(e.target.value)} className={field}>
+              <select
+                aria-label="Kind of siblings"
+                value={siblingType}
+                onChange={(e) => setSiblingType(e.target.value)}
+                className={field}
+              >
                 {SIBLING_TYPES.filter((t) => t.id !== 'full').map((t) => (
                   <option key={t.id} value={t.id}>{t.label}</option>
                 ))}

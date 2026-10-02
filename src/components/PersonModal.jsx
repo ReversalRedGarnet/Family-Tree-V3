@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import Modal from './Modal';
 import Tooltip, { InfoDot } from './Tooltip';
 import {
@@ -14,11 +14,19 @@ import { formatName } from '../utils/names';
 const field =
   'w-full rounded-xl border border-hairline bg-white px-3 py-2.5 text-sm text-ink transition-colors placeholder:text-mist/60 focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/30';
 
-function Label({ children, hint }) {
+// Inside a wrapping <label>, pass no htmlFor. A field with a hint must
+// instead pass its input's id as htmlFor: the (i) button then sits beside
+// a real <label>, not inside one, where it would take the field's name.
+function Label({ children, hint, htmlFor }) {
   return (
     <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-mist">
-      {children}
+      {htmlFor ? <label htmlFor={htmlFor}>{children}</label> : children}
       {hint && <InfoDot label={hint} />}
+      {hint && htmlFor && (
+        <span id={`${htmlFor}-hint`} className="sr-only">
+          {hint}
+        </span>
+      )}
     </span>
   );
 }
@@ -114,6 +122,7 @@ export default function PersonModal({
   onDeleteRelationship,
 }) {
   const [form, setForm] = useState({});
+  const additionalNamesId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -199,18 +208,23 @@ export default function PersonModal({
       </Zone>
 
       <Zone eyebrow="Additional details">
-        <label className="block">
-          <Label hint="Middle names, a maiden name, a nickname — whatever helps tell them apart.">
+        <div>
+          <Label
+            htmlFor={additionalNamesId}
+            hint="Middle names, a maiden name, a nickname — whatever helps tell them apart."
+          >
             Additional names
           </Label>
           <input
+            id={additionalNamesId}
+            aria-describedby={`${additionalNamesId}-hint`}
             type="text"
             value={form.additionalNames || ''}
             placeholder="Ngozi (née Eze)"
             onChange={(e) => set('additionalNames', e.target.value)}
             className={field}
           />
-        </label>
+        </div>
 
         <label className="block">
           <Label>Year of birth</Label>

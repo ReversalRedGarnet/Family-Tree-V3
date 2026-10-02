@@ -10,6 +10,7 @@ import ToastStack from './components/ToastStack';
 import Tooltip from './components/Tooltip';
 import { useFamilyTree } from './hooks/useFamilyTree';
 import { useToasts } from './hooks/useToasts';
+import { useConfirmQueue } from './hooks/useConfirmQueue';
 import { useMediaQuery } from './hooks/useMediaQuery';
 import { useDriveSync } from './hooks/useDriveSync';
 import {
@@ -68,7 +69,7 @@ export default function App() {
   const [exportModal, setExportModal] = useState({ open: false, busy: false });
   const [exportMemo, setExportMemo] = useState(null);
   const [activeExportTheme, setActiveExportTheme] = useState(null);
-  const [confirmState, setConfirmState] = useState(null);
+  const { current: confirmState, ask: askConfirm, resolve: resolveConfirm } = useConfirmQueue();
   const [contextMenu, setContextMenu] = useState(CLOSED_MENU);
 
   const { people, relationships, loadRepairedCount, selectedIds, generation, conflicts } = tree;
@@ -80,9 +81,9 @@ export default function App() {
   });
 
   // Drive found a version it can't reconcile silently — hand it to the
-  // person through the same single confirm-dialog slot everything else
-  // uses, rather than a second dialog that could stack on top of one
-  // already open. Whichever they pick overwrites the other side; Undo
+  // person through the same confirm queue everything else uses. If another
+  // question is already open, this one waits behind it rather than
+  // replacing it. Whichever they pick overwrites the other side; Undo
   // reaches back through it immediately after (and re-syncs, since an
   // undo is just another change), but only until the next reload.
   useEffect(() => {
@@ -90,17 +91,15 @@ export default function App() {
     const savedWhen = drive.conflict.driveSavedAt
       ? new Date(drive.conflict.driveSavedAt).toLocaleString()
       : 'earlier';
-    setConfirmState({
+    askConfirm({
       title: 'Different tree on Google Drive',
       message: `Drive has a different version of this tree, last saved ${savedWhen}. Whichever you pick overwrites the other — Undo gets you back right after, but not once you reload.`,
       confirmLabel: "Use Drive's version",
       cancelLabel: 'Keep this device',
       onConfirm: () => {
-        setConfirmState(null);
         drive.resolveConflict('use-drive');
       },
       onCancel: () => {
-        setConfirmState(null);
         drive.resolveConflict('keep-local');
       },
     });
@@ -216,7 +215,7 @@ export default function App() {
           `${childCount} ${childCount > 1 ? 'children stay' : 'child stays'} on the board, just without this parent.`
         );
       }
-      setConfirmState({
+      askConfirm({
         title: `Delete ${nameOf(id)}?`,
         message: details.join('\n\n') || 'They have no links, so nothing else changes.',
         danger: true,
@@ -224,7 +223,6 @@ export default function App() {
         onConfirm: () => {
           tree.deletePerson(id);
           setPersonModal((pm) => (pm.editingId === id ? CLOSED_PERSON : pm));
-          setConfirmState(null);
           pushToast(`${nameOf(id)} deleted.`, 'success', 3000);
         },
       });
@@ -238,14 +236,13 @@ export default function App() {
       requestDeletePerson(selectedIds[0]);
       return;
     }
-    setConfirmState({
+    askConfirm({
       title: `Delete ${selectedIds.length} people?`,
       message: `This removes ${selectedIds.map(nameOf).join(', ')} and every link they have.`,
       danger: true,
       confirmLabel: 'Delete all',
       onConfirm: () => {
         selectedIds.forEach((id) => tree.deletePerson(id));
-        setConfirmState(null);
         pushToast('Deleted.', 'success', 3000);
       },
     });
@@ -337,12 +334,11 @@ export default function App() {
 
       if (duplicate) {
         const who = formatName(duplicate);
-        setConfirmState({
+        askConfirm({
           title: editing ? 'That matches someone else' : 'You already added this person',
           message: `${who} is already on the board with the same name, gender and year of birth.\n\nIf these really are two different people, carry on — it's worth giving one of them a distinguishing detail so they're easy to tell apart later.`,
           confirmLabel: editing ? 'Save anyway' : 'Add anyway',
           onConfirm: () => {
-            setConfirmState(null);
             commitPersonSave(formData);
           },
         });
@@ -395,12 +391,11 @@ export default function App() {
             4000
           );
         }
-        setConfirmState(null);
         return;
       }
 
       const [current, ...rest] = queue;
-      setConfirmState({
+      askConfirm({
         title: 'Also their child?',
         message: `Is ${nameOf(current.childId)} also ${nameOf(current.candidateParentId)}'s child?`,
         confirmLabel: 'Yes',
@@ -551,7 +546,7 @@ export default function App() {
       }
 
       const parentNames = linkable.map(nameOf).join(' and ');
-      setConfirmState({
+      askConfirm({
         title: `Make ${nameOf(draggedId)} a child of ${parentNames}?`,
         message: blocked.length
           ? `${nameOf(draggedId)} already has a recorded link to ${blocked
@@ -561,7 +556,6 @@ export default function App() {
         confirmLabel: 'Add link',
         onConfirm: () => {
           tree.addParentLinks(draggedId, linkable);
-          setConfirmState(null);
           pushToast(`${nameOf(draggedId)} is now ${parentNames}'s child.`, 'success', 3500);
         },
       });
@@ -708,14 +702,13 @@ export default function App() {
   );
 
   const requestReset = useCallback(() => {
-    setConfirmState({
+    askConfirm({
       title: 'Clear the board?',
       message: "Everyone and every link goes, including the saved copy in this browser. Undo still works until you close the tab.",
       danger: true,
       confirmLabel: 'Clear board',
       onConfirm: () => {
         tree.resetAll();
-        setConfirmState(null);
         pushToast('Board cleared.', 'success', 2200);
       },
     });
@@ -899,21 +892,20 @@ export default function App() {
       <ContextMenu {...contextMenu} onClose={closeMenu} />
 
       <ConfirmDialog
+        // A new question remounts the dialog, so focus starts on its Cancel
+        // button again instead of staying on the button just pressed.
+        key={confirmState?.id ?? 'none'}
         open={Boolean(confirmState)}
         title={confirmState?.title}
         message={confirmState?.message}
         danger={confirmState?.danger}
         confirmLabel={confirmState?.confirmLabel}
         cancelLabel={confirmState?.cancelLabel}
-        onConfirm={() => confirmState?.onConfirm()}
-        // A confirmState with its own onCancel (the Drive conflict prompt's
-        // "keep this device" branch, and the shared-child questions below)
-        // needs that logic to actually run when the dialog is dismissed --
-        // this used to always just close the dialog regardless, silently
-        // skipping whatever onCancel was supposed to do. Falls back to a
-        // plain close for every confirmation that never needed more than
-        // that (delete, reset, duplicate-person, drag-adopt).
-        onCancel={() => (confirmState?.onCancel ? confirmState.onCancel() : setConfirmState(null))}
+        onConfirm={() => resolveConfirm('onConfirm')}
+        // Runs the question's own onCancel when it has one (the Drive
+        // conflict's "keep this device", the shared-child "No"); otherwise
+        // dismissing it is the whole answer.
+        onCancel={() => resolveConfirm('onCancel')}
       />
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />

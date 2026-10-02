@@ -9,19 +9,62 @@ const SIZES = {
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+// Every open dialog, oldest first. Only the last one answers Escape and Tab;
+// the ones underneath are made inert until it closes, so a question asked
+// on top of a form can't be dismissed by closing the form behind it.
+const openStack = [];
+// The page's own overflow style, saved when the first dialog opens and put
+// back when the last one closes, whichever order they close in.
+let bodyOverflow = '';
+
+const isTop = (entry) => openStack[openStack.length - 1] === entry;
+
+function setInert(entry, inert) {
+  const el = entry?.overlay;
+  if (!el) return;
+  if (inert) el.setAttribute('inert', '');
+  else el.removeAttribute('inert');
+}
+
+// Exported for tests.
+export function openModalCount() {
+  return openStack.length;
+}
+
 // One shell for every dialog. On phones it's a bottom sheet that can't get
 // taller than the screen; on wider screens it's a centred card. Either way
 // the body scrolls, not the page, so nothing ends up unreachable.
 export default function Modal({ open, title, subtitle, onClose, size = 'md', children }) {
+  const overlayRef = useRef(null);
   const dialogRef = useRef(null);
   const previousFocusRef = useRef(null);
+  // Callers pass inline arrows, so onClose changes identity on every render.
+  // Reading it through a ref keeps the effect below tied to `open` alone;
+  // re-running it would yank focus back to the first button.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // Remember whatever had focus so it can get it back on close. This is
+  // read during the render that opens the dialog, not in the effect: by the
+  // time the effect runs, an autoFocus field inside the dialog has already
+  // taken focus, and restoring to that (now removed) field drops focus on
+  // the page.
+  const openedRef = useRef(false);
+  if (open && !openedRef.current) {
+    openedRef.current = true;
+    previousFocusRef.current = document.activeElement;
+  }
+  if (!open) openedRef.current = false;
 
   useEffect(() => {
     if (!open) return undefined;
 
-    // Remember whatever had focus so it can get it back on close, rather
-    // than leaving focus stuck on a button that's now behind the backdrop.
-    previousFocusRef.current = document.activeElement;
+    const toRestore = previousFocusRef.current;
+    const entry = { overlay: overlayRef.current };
+    if (openStack.length === 0) bodyOverflow = document.body.style.overflow;
+    const below = openStack[openStack.length - 1];
+    if (below && !below.overlay?.contains(entry.overlay)) setInert(below, true);
+    openStack.push(entry);
 
     const dialog = dialogRef.current;
     const focusable = () =>
@@ -36,8 +79,9 @@ export default function Modal({ open, title, subtitle, onClose, size = 'md', chi
     }
 
     const onKey = (e) => {
+      if (!isTop(entry)) return;
       if (e.key === 'Escape') {
-        onClose?.();
+        onCloseRef.current?.();
         return;
       }
       if (e.key !== 'Tab' || !dialog) return;
@@ -62,21 +106,25 @@ export default function Modal({ open, title, subtitle, onClose, size = 'md', chi
       }
     };
 
-    const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     window.addEventListener('keydown', onKey);
     return () => {
-      document.body.style.overflow = previous;
       window.removeEventListener('keydown', onKey);
-      const toRestore = previousFocusRef.current;
+      const wasTop = isTop(entry);
+      openStack.splice(openStack.indexOf(entry), 1);
+      // The dialog underneath becomes live again before focus goes back
+      // into it; an inert element can't take focus.
+      if (wasTop) setInert(openStack[openStack.length - 1], false);
+      if (openStack.length === 0) document.body.style.overflow = bodyOverflow;
       if (toRestore && typeof toRestore.focus === 'function') toRestore.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 backdrop-blur-[2px] sm:items-center sm:p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose?.();
