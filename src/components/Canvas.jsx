@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Stage, Layer, Rect, Text } from 'react-konva';
+import { Stage, Layer, Rect, Ellipse, Text } from 'react-konva';
 import PersonNode from './PersonNode';
 import RelationshipLines from './RelationshipLines';
 import Tooltip from './Tooltip';
@@ -18,10 +18,19 @@ import {
   LINE_DROP_TOLERANCE,
   TOUCH_LINE_DROP_TOLERANCE,
   TOUCH_OVERLAP_THRESHOLD,
+  shapeForGender,
 } from '../utils/constants';
 import { buildConnectors, findConnectorAt } from '../utils/connectors';
 import { formatName } from '../utils/names';
 import { clampScale, fitScale, minScaleFor, wheelAction } from '../utils/viewport';
+import {
+  boardKeyCommand,
+  describePerson,
+  nextCurrent,
+  revealView,
+  startingPerson,
+} from '../utils/boardNav';
+import { createLongPress } from '../utils/longPress';
 
 const PAD = 140;
 
@@ -57,6 +66,32 @@ function overlapFraction(ax, ay, bx, by) {
 function distance(t1, t2) {
   return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
 }
+
+// The tap that ends a long-press isn't a tap: the menu it opened is the
+// whole answer, so it doesn't also change the selection.
+function endsLongPress(e, longPress) {
+  return isTouchEvent(e.evt) && longPress.fired;
+}
+
+// The person whose card `node` belongs to (the card itself or anything
+// drawn inside it), or null for the board, a line, or anything else.
+function personIdOf(node, nodeRefs) {
+  for (let n = node; n; n = n.getParent?.()) {
+    const id = Object.keys(nodeRefs).find((key) => nodeRefs[key] === n);
+    if (id) return id;
+  }
+  return null;
+}
+
+// Read out by screen readers when the board takes focus.
+const BOARD_KEYS_HELP =
+  'Arrow keys move between people and select them; Shift with an arrow adds to the selection. ' +
+  'Space selects or deselects. Enter edits. Shift+F10 or the Menu key opens the menu. ' +
+  'Delete removes the selection.';
+
+// The dashed ring round the keyboard's current person, this far outside
+// the card's own outline.
+const RING_GAP = 7;
 
 function ZoomButton({ label, detail, onClick, children }) {
   return (
@@ -147,6 +182,11 @@ const Canvas = forwardRef(function Canvas(
   const [touchDrag, setTouchDrag] = useState(false);
   const [marqueeRect, setMarqueeRect] = useState(null);
   const [spaceHeld, setSpaceHeld] = useState(false);
+  // Keyboard: the person the keys act on, and whether the keyboard is in
+  // use right now. The ring is only drawn while it is, so a mouse user
+  // never sees it.
+  const [currentId, setCurrentId] = useState(null);
+  const [keyboardActive, setKeyboardActive] = useState(false);
 
   useImperativeHandle(ref, () => stageRef.current, []);
 
@@ -271,6 +311,51 @@ const Canvas = forwardRef(function Canvas(
     [zoomAround]
   );
 
+  // ---- Touch: long-press opens the menu ----
+  //
+  // A held finger on a card or on the empty board opens the same menu a
+  // right-click does. Read through a ref so the long-press controller,
+  // created once, always calls the current handlers.
+  const menuHandlersRef = useRef({ onPersonContextMenu, onCanvasContextMenu });
+  menuHandlersRef.current = { onPersonContextMenu, onCanvasContextMenu };
+  // When a hold opened the menu, so Android's own long-press `contextmenu`
+  // arriving just after doesn't open it a second time.
+  const lastLongPressAtRef = useRef(0);
+  // The card a hold landed on stops being draggable until the finger
+  // lifts, so drifting off the menu doesn't drag the card too.
+  const heldCardRef = useRef(null);
+
+  const holdStill = useCallback((personId) => {
+    // The gesture stops panning, keeping wherever the board had got to.
+    const stage = stageRef.current;
+    if (panRef.current && stage) setView((v) => ({ ...v, x: stage.x(), y: stage.y() }));
+    panRef.current = null;
+    const node = personId ? nodeRefs.current[personId] : null;
+    if (node) {
+      node.draggable(false);
+      heldCardRef.current = node;
+    }
+  }, []);
+
+  const releaseHeldCard = useCallback(() => {
+    heldCardRef.current?.draggable(true);
+    heldCardRef.current = null;
+  }, []);
+
+  const longPressRef = useRef(null);
+  if (!longPressRef.current) {
+    longPressRef.current = createLongPress({
+      onFire: ({ x, y, detail }) => {
+        lastLongPressAtRef.current = Date.now();
+        holdStill(detail.personId);
+        const { onPersonContextMenu: personMenu, onCanvasContextMenu: boardMenu } = menuHandlersRef.current;
+        if (detail.personId) personMenu(detail.personId, x, y);
+        else boardMenu(x, y, detail.worldX);
+      },
+    });
+  }
+  useEffect(() => () => longPressRef.current?.cancel(), []);
+
   // Touch panning and pinch-zoom used to ride on Konva's own `draggable`
   // Stage, but that also has to be off now (plain left-drag on empty canvas
   // is the marquee gesture, mouse-side — see below), so both are done by
@@ -283,14 +368,31 @@ const Canvas = forwardRef(function Canvas(
   const handleTouchStart = useCallback(
     (e) => {
       const touches = e.evt.touches;
+      const longPress = longPressRef.current;
       if (touches.length >= 2) {
+        longPress.cancel();
         panRef.current = null;
         const [t1, t2] = touches;
         pinchRef.current = { dist: distance(t1, t2) };
         return;
       }
-      if (touches.length === 1 && e.target === e.target.getStage()) {
-        const t = touches[0];
+      if (touches.length !== 1) return;
+      const t = touches[0];
+      releaseHeldCard();
+      const onBoard = e.target === e.target.getStage();
+      const personId = onBoard ? null : personIdOf(e.target, nodeRefs.current);
+      if (personId) {
+        longPress.start(t.clientX, t.clientY, { personId });
+      } else if (onBoard) {
+        const box = stageRef.current?.container().getBoundingClientRect();
+        const v = viewRef.current;
+        const worldX = box ? (t.clientX - box.left - v.x) / v.scale : 0;
+        longPress.start(t.clientX, t.clientY, { worldX });
+      } else {
+        // A line has its own tap menu; a hold there is nothing special.
+        longPress.cancel();
+      }
+      if (onBoard) {
         panRef.current = {
           startClientX: t.clientX,
           startClientY: t.clientY,
@@ -299,7 +401,7 @@ const Canvas = forwardRef(function Canvas(
         };
       }
     },
-    []
+    [releaseHeldCard]
   );
 
   const handleTouchMove = useCallback(
@@ -325,6 +427,8 @@ const Canvas = forwardRef(function Canvas(
         return;
       }
 
+      if (touches.length === 1) longPressRef.current.move(touches[0].clientX, touches[0].clientY);
+
       if (touches.length === 1 && panRef.current) {
         e.evt.preventDefault();
         const t = touches[0];
@@ -340,8 +444,15 @@ const Canvas = forwardRef(function Canvas(
 
   const handleTouchEnd = useCallback((e) => {
     const remaining = e.evt.touches;
+    const longPress = longPressRef.current;
+    longPress.cancel();
+    // After a hold opened the menu, lifting the finger is the end of that
+    // gesture, not a tap: no click or mouse events follow it (on iOS those
+    // would land on the board and close the menu straight away).
+    if (longPress.fired && e.evt.cancelable) e.evt.preventDefault();
 
     if (remaining.length === 0) {
+      releaseHeldCard();
       pinchRef.current = null;
       const stage = stageRef.current;
       if (panRef.current && stage) setView((v) => ({ ...v, x: stage.x(), y: stage.y() }));
@@ -363,7 +474,7 @@ const Canvas = forwardRef(function Canvas(
         startY: stage ? stage.y() : viewRef.current.y,
       };
     }
-  }, []);
+  }, [releaseHeldCard]);
 
   // ---- Mouse: pan (middle-button or space+drag) and marquee select ----
 
@@ -535,6 +646,8 @@ const Canvas = forwardRef(function Canvas(
   // delta so far" applied to each of them.
   const handleDragStart = useCallback(
     (personId, e) => {
+      // Moving the card means it wasn't a hold.
+      longPressRef.current.cancel();
       setTouchDrag(isTouchEvent(e?.evt));
       if (selectedIds.length > 1 && selectedIds.includes(personId)) {
         const anchor = people[personId]?.position;
@@ -652,23 +765,43 @@ const Canvas = forwardRef(function Canvas(
   // otherwise picking two people to link on mobile is simply impossible,
   // since every tap would replace the selection instead of building a pair.
   const handlePersonClick = useCallback(
-    (personId, e) => onSelect(personId, e.evt.shiftKey || e.evt.metaKey || isTouchEvent(e.evt)),
+    (personId, e) => {
+      if (endsLongPress(e, longPressRef.current)) return;
+      setCurrentId(personId);
+      onSelect(personId, e.evt.shiftKey || e.evt.metaKey || isTouchEvent(e.evt));
+    },
     [onSelect]
   );
+
+  // Android sends its own `contextmenu` for a held finger. Whichever of
+  // that and the long-press timer comes first opens the menu; the other is
+  // ignored.
+  const menuAlreadyOpenedByHold = useCallback((personId) => {
+    const longPress = longPressRef.current;
+    if (Date.now() - lastLongPressAtRef.current < 1000) return true;
+    if (longPress.pending) {
+      longPress.claim();
+      lastLongPressAtRef.current = Date.now();
+      holdStill(personId);
+    }
+    return false;
+  }, [holdStill]);
 
   const handlePersonContextMenu = useCallback(
     (personId, e) => {
       e.evt.preventDefault();
       e.cancelBubble = true;
+      if (menuAlreadyOpenedByHold(personId)) return;
       onPersonContextMenu(personId, e.evt.clientX, e.evt.clientY);
     },
-    [onPersonContextMenu]
+    [onPersonContextMenu, menuAlreadyOpenedByHold]
   );
 
   // ---- Stage-level events ----
 
   const handleStageClick = useCallback(
     (e) => {
+      if (endsLongPress(e, longPressRef.current)) return;
       if (e.target === e.target.getStage()) onSelect(null);
     },
     [onSelect]
@@ -678,14 +811,134 @@ const Canvas = forwardRef(function Canvas(
     (e) => {
       e.evt.preventDefault();
       if (e.target !== e.target.getStage()) return;
+      if (menuAlreadyOpenedByHold(null)) return;
       const stage = stageRef.current;
       const pointer = stage?.getPointerPosition();
       if (!pointer) return;
       const worldX = (pointer.x - view.x) / view.scale;
       onCanvasContextMenu(e.evt.clientX, e.evt.clientY, worldX);
     },
-    [onCanvasContextMenu, view]
+    [onCanvasContextMenu, view, menuAlreadyOpenedByHold]
   );
+
+  // ---- Keyboard ----
+  //
+  // The board is one Tab stop; the keys move a "current person" around it
+  // (see utils/boardNav.js for the rules). Only keys pressed on the board
+  // itself count, not on the zoom buttons inside it.
+
+  const liveCurrentId = currentId && people[currentId] ? currentId : null;
+
+  // Pans just enough to keep the person on screen, and returns the view it
+  // ends up at.
+  const reveal = useCallback(
+    (id) => {
+      const person = people[id];
+      if (!person) return viewRef.current;
+      const next = revealView(viewRef.current, size, { x: person.position?.x ?? 0, y: person.position?.y ?? 0 });
+      if (next !== viewRef.current) setView(next);
+      return next;
+    },
+    [people, size]
+  );
+
+  const openMenuFromKeyboard = useCallback(
+    (id) => {
+      const box = containerRef.current?.getBoundingClientRect();
+      if (!box) return;
+      if (!id) {
+        const v = viewRef.current;
+        const centre = { x: size.width / 2, y: size.height / 2 };
+        onCanvasContextMenu(box.left + centre.x, box.top + centre.y, (centre.x - v.x) / v.scale);
+        return;
+      }
+      // Just under the card, so the menu doesn't cover who it's about.
+      const v = reveal(id);
+      const pos = people[id].position || { x: 0, y: 0 };
+      onPersonContextMenu(
+        id,
+        box.left + v.x + (pos.x ?? 0) * v.scale,
+        box.top + v.y + ((pos.y ?? 0) + CARD_HEIGHT / 2) * v.scale + 6
+      );
+    },
+    [people, size, reveal, onCanvasContextMenu, onPersonContextMenu]
+  );
+
+  const handleBoardKeyDown = useCallback(
+    (e) => {
+      if (e.target !== e.currentTarget) return;
+      const command = boardKeyCommand(e);
+      if (!command) return;
+      // Space after a mouse click is still hold-Space-to-pan; it only
+      // selects once the keyboard is in use.
+      if (command.type === 'toggle' && (!keyboardActive || e.repeat)) return;
+      e.preventDefault();
+      setKeyboardActive(true);
+
+      if (command.type === 'move') {
+        const id = nextCurrent(people, liveCurrentId, selectedIds, command.direction);
+        if (!id) return;
+        setCurrentId(id);
+        reveal(id);
+        if (!command.extend) onSelect(id, false);
+        else if (!selectedIds.includes(id)) onSelect(id, true);
+        return;
+      }
+
+      const id = liveCurrentId || startingPerson(people, selectedIds);
+      if (command.type === 'menu') {
+        if (id) setCurrentId(id);
+        openMenuFromKeyboard(id);
+        return;
+      }
+      if (!id) return;
+      setCurrentId(id);
+      if (command.type === 'edit') onEditPerson(id);
+      else onSelect(id, true);
+    },
+    [keyboardActive, people, liveCurrentId, selectedIds, reveal, onSelect, onEditPerson, openMenuFromKeyboard]
+  );
+
+  // Tabbing in shows the ring; a click that focuses the board doesn't.
+  // :focus-visible is the browser's own call on which of the two it was,
+  // including when focus comes back from a menu or dialog.
+  const handleBoardFocus = useCallback(
+    (e) => {
+      if (e.target !== e.currentTarget) return;
+      let fromKeyboard = false;
+      try {
+        fromKeyboard = e.currentTarget.matches(':focus-visible');
+      } catch {
+        fromKeyboard = false;
+      }
+      if (!fromKeyboard) return;
+      setKeyboardActive(true);
+      const id = liveCurrentId || startingPerson(people, selectedIds);
+      if (id) {
+        setCurrentId(id);
+        reveal(id);
+      }
+    },
+    [liveCurrentId, people, selectedIds, reveal]
+  );
+
+  const handleBoardBlur = useCallback((e) => {
+    if (e.target === e.currentTarget) setKeyboardActive(false);
+  }, []);
+
+  // The keyboard menu keys also make the browser fire `contextmenu` at the
+  // board itself; its own menu mustn't open on top of this one. A real
+  // right-click lands on the canvas inside, which Konva handles as before.
+  const handleBoardNativeMenu = useCallback((e) => {
+    if (e.target === e.currentTarget) e.preventDefault();
+  }, []);
+
+  const handleBoardPointerDown = useCallback(() => setKeyboardActive(false), []);
+
+  const ringPerson = keyboardActive && !exportTheme && liveCurrentId ? people[liveCurrentId] : null;
+  const announcement = keyboardActive && liveCurrentId
+    ? describePerson(people[liveCurrentId], selectedIds.includes(liveCurrentId))
+    : '';
 
   const isEmpty = Object.keys(people).length === 0;
 
@@ -713,7 +966,22 @@ const Canvas = forwardRef(function Canvas(
       ref={containerRef}
       className="board-surface relative h-full w-full touch-none overflow-hidden"
       style={spaceHeld ? { cursor: 'grab' } : undefined}
+      tabIndex={0}
+      role="application"
+      aria-label="Family tree board"
+      aria-describedby="board-keys-help"
+      onKeyDown={handleBoardKeyDown}
+      onFocus={handleBoardFocus}
+      onBlur={handleBoardBlur}
+      onContextMenu={handleBoardNativeMenu}
+      onPointerDown={handleBoardPointerDown}
     >
+      <p id="board-keys-help" className="sr-only">
+        {BOARD_KEYS_HELP}
+      </p>
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </div>
       <Stage
         ref={stageRef}
         width={size.width}
@@ -774,6 +1042,32 @@ const Canvas = forwardRef(function Canvas(
               exportTheme={exportTheme}
             />
           ))}
+
+          {ringPerson &&
+            (shapeForGender(ringPerson.gender) === 'circle' ? (
+              <Ellipse
+                x={ringPerson.position?.x ?? 0}
+                y={ringPerson.position?.y ?? 0}
+                radiusX={CARD_WIDTH / 2 + RING_GAP}
+                radiusY={CARD_HEIGHT / 2 + RING_GAP}
+                stroke="#0B6E7C"
+                strokeWidth={2.5}
+                dash={[7, 5]}
+                listening={false}
+              />
+            ) : (
+              <Rect
+                x={(ringPerson.position?.x ?? 0) - CARD_WIDTH / 2 - RING_GAP}
+                y={(ringPerson.position?.y ?? 0) - CARD_HEIGHT / 2 - RING_GAP}
+                width={CARD_WIDTH + RING_GAP * 2}
+                height={CARD_HEIGHT + RING_GAP * 2}
+                cornerRadius={4}
+                stroke="#0B6E7C"
+                strokeWidth={2.5}
+                dash={[7, 5]}
+                listening={false}
+              />
+            ))}
 
           {marqueeRect && (
             <Rect

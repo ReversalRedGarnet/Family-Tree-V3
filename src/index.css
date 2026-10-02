@@ -61,6 +61,17 @@ body {
     linear-gradient(rgba(14, 165, 183, 0.06) 1px, transparent 1px),
     linear-gradient(90deg, rgba(14, 165, 183, 0.06) 1px, transparent 1px);
   background-size: 32px 32px, 32px 32px;
+  /* A held finger opens the board's own menu (Canvas.jsx). Without these,
+     iOS would also offer its text-selection loupe and callout. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* The board fills the screen edge to edge, so its focus ring goes inside. */
+.board-surface:focus-visible {
+  outline-offset: -3px;
+  border-radius: 0;
 }
 
 /* Numbers that used to sit in a mono face now use tabular figures instead,
