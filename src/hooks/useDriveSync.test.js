@@ -31,7 +31,14 @@ vi.mock('../utils/driveSync', async () => {
   return { ...actual, findAppDataFile, downloadAppDataFile, uploadAppDataFile };
 });
 
-import { useDriveSync, PUSH_DEBOUNCE_MS, PUSH_MAX_ATTEMPTS, PUSH_RETRY_MAX_MS } from './useDriveSync';
+import {
+  useDriveSync,
+  loadGoogleIdentity,
+  GOOGLE_IDENTITY_SRC,
+  PUSH_DEBOUNCE_MS,
+  PUSH_MAX_ATTEMPTS,
+  PUSH_RETRY_MAX_MS,
+} from './useDriveSync';
 
 // A minimal stand-in for the real Google Identity Services token client:
 // requestAccessToken resolves whatever callback requestToken() most
@@ -427,6 +434,155 @@ describe('useDriveSync download path', () => {
     expect(replaceGraph).not.toHaveBeenCalled();
     expect(result.current.status).toBe('error');
     expect(result.current.errorMessage).toMatch(/different version/);
+    unmount();
+  });
+});
+
+describe('Google is only contacted after a click (M8)', () => {
+  const googleScripts = () => [...document.querySelectorAll('script')].filter((s) => s.src === GOOGLE_IDENTITY_SRC);
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    delete window.google;
+    googleScripts().forEach((s) => s.remove());
+    findAppDataFile.mockReset();
+    downloadAppDataFile.mockReset();
+    uploadAppDataFile.mockReset();
+  });
+
+  afterEach(() => {
+    delete window.google;
+    googleScripts().forEach((s) => s.remove());
+  });
+
+  it('mounting loads nothing from Google, even on a device that signed in before', async () => {
+    window.localStorage.setItem('family-tree/drive-sync/v1', JSON.stringify({ signedIn: true, fileId: 'f', lastSyncedAt: null }));
+    const { result, unmount } = renderHook(() =>
+      useDriveSync({ people: {}, relationships: {}, replaceGraph: vi.fn(), pushToast: vi.fn() })
+    );
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    expect(googleScripts()).toHaveLength(0);
+    expect(findAppDataFile).not.toHaveBeenCalled();
+    expect(result.current.status).toBe('signed-out');
+    expect(result.current.canReconnect).toBe(true);
+    unmount();
+  });
+
+  it('Reconnect, once clicked, signs in quietly (no consent prompt) and resumes', async () => {
+    window.localStorage.setItem('family-tree/drive-sync/v1', JSON.stringify({ signedIn: true, fileId: null, lastSyncedAt: null }));
+    installFakeGoogleIdentity();
+    const prompts = [];
+    const realInit = window.google.accounts.oauth2.initTokenClient;
+    window.google.accounts.oauth2.initTokenClient = (cfg) => {
+      const client = realInit(cfg);
+      const request = client.requestAccessToken;
+      client.requestAccessToken = (opts) => {
+        prompts.push(opts?.prompt);
+        request(opts);
+      };
+      return client;
+    };
+    findAppDataFile.mockResolvedValue(null); // Drive empty, device empty: nothing to do
+    const { result, unmount } = renderHook(() =>
+      useDriveSync({ people: {}, relationships: {}, replaceGraph: vi.fn(), pushToast: vi.fn() })
+    );
+
+    await act(async () => {
+      await result.current.reconnect();
+    });
+
+    expect(prompts).toEqual(['']);
+    expect(result.current.status).toBe('signed-in');
+    unmount();
+  });
+
+  it('loadGoogleIdentity adds the script once, on demand, and resolves when it arrives', async () => {
+    expect(googleScripts()).toHaveLength(0);
+    const first = loadGoogleIdentity();
+    const second = loadGoogleIdentity();
+    expect(googleScripts()).toHaveLength(1);
+
+    installFakeGoogleIdentity();
+    googleScripts()[0].onload();
+
+    await expect(first).resolves.toBe(window.google);
+    await expect(second).resolves.toBe(window.google);
+  });
+
+  it('a failed load can be retried by clicking again', async () => {
+    const attempt = loadGoogleIdentity();
+    googleScripts()[0].onerror();
+    await expect(attempt).rejects.toThrow(/Could not reach Google/);
+    expect(googleScripts()).toHaveLength(0);
+
+    loadGoogleIdentity();
+    expect(googleScripts()).toHaveLength(1);
+  });
+});
+
+describe('sync uses the tree as it is now, and Drive\'s clock (L21, M11)', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    installFakeGoogleIdentity();
+    findAppDataFile.mockReset();
+    downloadAppDataFile.mockReset();
+    uploadAppDataFile.mockReset();
+  });
+
+  afterEach(() => {
+    delete window.google;
+  });
+
+  it('asks instead of silently downloading when the board was edited during the handshake', async () => {
+    findAppDataFile.mockResolvedValue({ id: REMOTE_FILE_ID, modifiedTime: DRIVE_SAVED_AT });
+    let finishDownload;
+    downloadAppDataFile.mockReturnValue(new Promise((resolve) => (finishDownload = resolve)));
+    const replaceGraph = vi.fn();
+    const { result, rerender, unmount } = renderHook((props) => useDriveSync(props), {
+      initialProps: { people: {}, relationships: {}, replaceGraph, pushToast: vi.fn() },
+    });
+
+    let signingIn;
+    await act(async () => {
+      signingIn = result.current.signIn();
+      await Promise.resolve();
+    });
+    // While Drive's copy is still downloading, someone is added on this device.
+    rerender({
+      people: { n: { id: 'n', firstName: 'New', lastName: '', gender: 'male', living: true, position: { x: 0, y: 0 } } },
+      relationships: {},
+      replaceGraph,
+      pushToast: vi.fn(),
+    });
+    await act(async () => {
+      finishDownload({ people: { d: { firstName: 'FromDrive' } }, relationships: {} });
+      await signingIn;
+    });
+
+    expect(replaceGraph).not.toHaveBeenCalled();
+    expect(result.current.conflict).toMatchObject({ fileId: REMOTE_FILE_ID });
+    expect(result.current.status).toBe('conflict');
+    unmount();
+  });
+
+  it("records Drive's modifiedTime as the last sync, not this device's clock", async () => {
+    findAppDataFile.mockResolvedValue(null); // Drive empty, this device has a tree: upload
+    const driveClock = '2031-05-06T07:08:09.000Z';
+    uploadAppDataFile.mockResolvedValue({ id: 'new-file', modifiedTime: driveClock });
+    const people = { a: { id: 'a', firstName: 'A', lastName: '', gender: 'male', living: true, position: { x: 0, y: 0 } } };
+    const { result, unmount } = renderHook(() =>
+      useDriveSync({ people, relationships: {}, replaceGraph: vi.fn(), pushToast: vi.fn() })
+    );
+
+    await act(async () => {
+      await result.current.signIn();
+    });
+
+    expect(result.current.lastSyncedAt).toBe(driveClock);
+    expect(JSON.parse(window.localStorage.getItem('family-tree/drive-sync/v1')).lastSyncedAt).toBe(driveClock);
     unmount();
   });
 });

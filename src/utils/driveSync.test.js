@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { decideSyncAction, buildMultipartBody } from './driveSync';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { decideSyncAction, buildMultipartBody, uploadAppDataFile } from './driveSync';
 
 describe('decideSyncAction', () => {
   it('does nothing when both sides are empty', () => {
@@ -92,5 +92,35 @@ describe('buildMultipartBody', () => {
     expect(body).toContain('Content-Type: application/json; charset=UTF-8\r\n\r\n{"name":"tree.json"}');
     expect(body).toContain('Content-Type: application/json\r\n\r\n{"people":{}}');
     expect(body.trim().endsWith('--BOUNDARY--')).toBe(true);
+  });
+});
+
+describe("uploadAppDataFile asks for Drive's clock (M11)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const stubFetch = () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ id: 'f1', modifiedTime: '2031-01-01T00:00:00.000Z' }) }));
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  };
+
+  it('requests id and modifiedTime when creating the file', async () => {
+    const fetchMock = stubFetch();
+    const saved = await uploadAppDataFile('token', null, { people: {}, relationships: {} });
+    const url = new URL(fetchMock.mock.calls[0][0]);
+    expect(url.searchParams.get('uploadType')).toBe('multipart');
+    expect(url.searchParams.get('fields')).toBe('id,modifiedTime');
+    expect(saved.modifiedTime).toBe('2031-01-01T00:00:00.000Z');
+  });
+
+  it('requests id and modifiedTime when overwriting it', async () => {
+    const fetchMock = stubFetch();
+    await uploadAppDataFile('token', 'f1', { people: {}, relationships: {} });
+    const url = new URL(fetchMock.mock.calls[0][0]);
+    expect(url.pathname.endsWith('/f1')).toBe(true);
+    expect(url.searchParams.get('uploadType')).toBe('media');
+    expect(url.searchParams.get('fields')).toBe('id,modifiedTime');
   });
 });

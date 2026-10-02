@@ -25,13 +25,11 @@
       font. Nothing else in the app needs to change either way.
     -->
     <!--
-      Google Identity Services — only used for the optional Drive sync
-      sign-in (src/hooks/useDriveSync.js). Loaded unconditionally since it's
-      tiny and async, but the app never calls into it unless
-      src/utils/driveConfig.js has a real client ID in it; see the "Google
-      Drive sync" section in README.md.
+      Google's sign-in script (for the optional Drive sync) is deliberately
+      not loaded here. src/hooks/useDriveSync.js adds it only when a Drive
+      sign-in or reconnect control is clicked, so a page load sends nothing
+      to Google, and nothing ever does while Drive sync isn't configured.
     -->
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
   <body class="bg-paper">
     <div id="root"></div>
