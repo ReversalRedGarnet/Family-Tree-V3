@@ -12,6 +12,23 @@ export default defineConfig({
     port: 5173,
     open: true,
   },
+  // React and Konva are most of the boot bundle and change far less often
+  // than the app itself, so they get chunks of their own: a new release
+  // only re-downloads the app's code, and no single chunk trips the 500 kB
+  // warning. (jsPDF and its helpers are already split off, loaded only on
+  // a PDF export.)
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+            { name: 'konva', test: /[\\/]node_modules[\\/](konva|react-konva|react-reconciler|its-fine)[\\/]/ },
+          ],
+        },
+      },
+    },
+  },
   // Mostly pure-logic unit tests (see src/utils/*.test.js) — no DOM needed,
   // so the default 'node' environment is enough and keeps them fast. The few
   // that render through React Testing Library (useDriveSync, ErrorBoundary)
