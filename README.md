@@ -5,10 +5,10 @@ browser and can optionally sync to your own Google Drive; export a PNG or PDF
 to share it. There is no account to create and no backend of this app's own.
 
 Your tree stays in your browser unless you export it or turn on the optional
-Google Drive sync. One thing does reach Google on every visit regardless:
-`index.html` loads Google's sign-in script (`accounts.google.com/gsi/client`)
-on every page load, even when Drive sync is switched off. No tree data is sent
-with it. See [Google Drive sync](#google-drive-sync-optional) below.
+Google Drive sync. Nothing is requested from Google until you click a Drive
+sign-in button, and with Drive sync not set up (as shipped) the app never
+contacts Google at all. See [Google Drive sync](#google-drive-sync-optional)
+below.
 
 ## What you see
 
@@ -116,7 +116,7 @@ font, and everything else works normally.
 ## Project structure
 
 ```
-index.html                 Vite HTML shell: loads src/index.jsx (and Google's sign-in script)
+index.html                 Vite HTML shell: loads src/index.jsx
 src/
   index.jsx                Entry point: mounts <App /> inside an ErrorBoundary
   index.css                Tailwind layers, the board's grid, focus ring, toast animation
@@ -440,10 +440,10 @@ browser copy is still saved either way.
 
 ### What loads from Google
 
-- **Always, on every page load:** Google's sign-in script, from
-  `accounts.google.com/gsi/client`. This happens even when Drive sync isn't
-  set up, so Google sees each visit (your IP address and browser) but none of
-  your tree.
+- **Only when you click a Drive sign-in or reconnect button:** Google's
+  sign-in script, from `accounts.google.com/gsi/client`. Opening the page
+  loads nothing from Google, and while Drive sync isn't set up nothing ever
+  does.
 - **Only after you sign in:** the tree itself is uploaded to and downloaded
   from your Drive.
 
@@ -471,10 +471,11 @@ controls.
 - **Scope.** It asks only for the `drive.appdata` scope: a hidden folder in
   your Drive that you can't see in Drive itself and other apps can't read. One
   file lives there, holding the tree plus a save version and time.
-- **Sign-in.** The first sign-in shows Google's consent screen. Later visits
-  try to sign in again silently, with no popup. If that fails (third-party
-  storage blocked, or access revoked), the **Sign in** button simply comes
-  back.
+- **Sign-in.** The first sign-in shows Google's consent screen. On later
+  visits sync doesn't resume by itself: the sidebar shows **Reconnect to
+  Google Drive**, and one click signs in again without the consent screen.
+  If that fails (third-party storage blocked, or access revoked), the
+  **Sign in** button comes back.
 - **The first check.** Right after signing in, the app compares Drive with
   this device:
   - Drive empty, this device has a tree: it's uploaded.
@@ -497,10 +498,9 @@ controls.
 - **No real-time collaboration.** The comparison happens once, at sign-in.
   Two devices editing at the same time will each overwrite the other's
   uploads; nothing is merged.
-- **Time comparison uses this device's clock.** The "last synced" time is
-  recorded from this device's clock, because Drive's own time isn't
-  requested on upload. A device whose clock is far off can misjudge whether
-  Drive has changed since.
+- **It doesn't rely on this device's clock.** Whether Drive has changed
+  since this device last synced is judged by Drive's own save times, so a
+  device whose clock is wrong can't misjudge it.
 
 ## Deliberate simplifications
 
