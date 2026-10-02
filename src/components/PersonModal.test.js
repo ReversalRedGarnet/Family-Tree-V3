@@ -87,6 +87,29 @@ describe('editing a link from the person form (F1, F2)', () => {
     expect(screen.getByLabelText('Additional names').maxLength).toBe(80);
   });
 
+  it('year fields take digits only, and say so in a hint tied to the field (L4)', () => {
+    render(h(PersonModal, { open: true, mode: 'add', people: {}, onSave: () => {}, onCancel: () => {} }));
+    const birth = screen.getByPlaceholderText('1953');
+    fireEvent.change(birth, { target: { value: 'c. 1890s' } });
+    expect(birth.value).toBe('1890');
+
+    const hint = document.getElementById(birth.getAttribute('aria-describedby'));
+    expect(hint.textContent).toMatch(/Digits only/);
+    expect(hint.textContent).toMatch(/Notes/);
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Deceased' }));
+    const death = screen.getByPlaceholderText('2011');
+    expect(document.getElementById(death.getAttribute('aria-describedby')).textContent).toMatch(/Digits only/);
+  });
+
+  it('partnership years carry the same digits-only hint (L4)', () => {
+    render(h(Board, { linkOpen: true, onEditRelationship: () => {} }));
+    const started = screen.getByPlaceholderText('1998');
+    fireEvent.change(started, { target: { value: 'about 2001' } });
+    expect(started.value).toBe('2001');
+    expect(document.getElementById(started.getAttribute('aria-describedby')).textContent).toMatch(/digits only/);
+  });
+
   it('a hidden year of death is dropped when saving someone marked alive (L5)', () => {
     const onSave = vi.fn();
     render(h(PersonModal, { open: true, mode: 'add', people: {}, onSave, onCancel: () => {} }));

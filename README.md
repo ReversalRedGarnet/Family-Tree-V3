@@ -394,10 +394,12 @@ pairs that affected, if any.
   (relationships removed, children who'll lose that parent link) rather
   than a generic "are you sure?". Deleting never leaves a dangling
   reference to a person or relationship that no longer exists.
-- **Dates** are treated as free text and never block a save — implausible
-  or inconsistent dates (death before birth, a parent younger than their
-  child, marked "living" with a death date, etc.) show as inline warnings
-  instead.
+- **Dates** are years only, typed as digits (`1953`): the year fields
+  accept nothing else, so "c. 1890" or "1890s" can't be entered (an
+  approximate year can go in Notes). Dates never block a save —
+  implausible or inconsistent ones (death before birth, a parent younger
+  than their child, marked "living" with a death date, etc.) show as
+  inline warnings instead.
 - **Export** is wrapped in try/catch end-to-end: a failed PDF library load,
   a canvas that isn't ready yet, or a browser without 2D canvas support all
   surface a specific error toast instead of a silent failure or a frozen

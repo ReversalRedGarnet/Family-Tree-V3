@@ -100,8 +100,12 @@ function labelFor(rel, otherName) {
 }
 
 // Years only. Strips anything that isn't a digit so the field can't hold
-// something the tree won't be able to read back.
-function YearInput({ value, onChange, placeholder }) {
+// something the tree won't be able to read back. Approximate dates are
+// deliberately not supported; the hint below the field says so, and where
+// to put a "circa" instead.
+const YEAR_HINT = 'Digits only, like 1953. Not sure? Give your best guess, or leave it blank and write "about 1890" in Notes.';
+
+function YearInput({ value, onChange, placeholder, describedBy }) {
   return (
     <input
       type="text"
@@ -109,6 +113,7 @@ function YearInput({ value, onChange, placeholder }) {
       maxLength={4}
       value={value || ''}
       placeholder={placeholder}
+      aria-describedby={describedBy}
       onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 4))}
       className={field}
     />
@@ -144,6 +149,7 @@ export default function PersonModal({
 }) {
   const [form, setForm] = useState({});
   const additionalNamesId = useId();
+  const yearHintId = useId();
   // What the form was last filled from, to tell the person's own edits
   // apart from changes made to the record while the form is open.
   const filledFromRef = useRef(null);
@@ -263,7 +269,15 @@ export default function PersonModal({
 
         <label className="block">
           <Label>Year of birth</Label>
-          <YearInput value={form.birthYear} onChange={(v) => set('birthYear', v)} placeholder="1953" />
+          <YearInput
+            value={form.birthYear}
+            onChange={(v) => set('birthYear', v)}
+            placeholder="1953"
+            describedBy={yearHintId}
+          />
+          <span id={yearHintId} className="mt-1 block text-xs leading-snug text-mist">
+            {YEAR_HINT}
+          </span>
         </label>
 
         <label className="block">
@@ -319,7 +333,11 @@ export default function PersonModal({
               value={form.deathYear}
               onChange={(v) => set('deathYear', v)}
               placeholder="2011"
+              describedBy={`${yearHintId}-death`}
             />
+            <span id={`${yearHintId}-death`} className="mt-1 block text-xs leading-snug text-mist">
+              {YEAR_HINT}
+            </span>
           </label>
         </Zone>
       )}
