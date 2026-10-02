@@ -650,7 +650,10 @@ export default function App() {
       setExportMemo(null);
       setExportModal({ open: false, busy: false });
       if (!result.ok) pushToast(result.error, 'error');
-      else pushToast(`Saved as ${kind.toUpperCase()}.`, 'success', 2500);
+      else {
+        pushToast(`Saved as ${kind.toUpperCase()}.`, 'success', 2500);
+        if (result.warning) pushToast(result.warning, 'warning', 8000);
+      }
     },
     [pushToast]
   );
