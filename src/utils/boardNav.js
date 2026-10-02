@@ -89,6 +89,14 @@ export function boardKeyCommand(e) {
   return null;
 }
 
+// Whether holding Space should mean "drag to pan". Only while the board
+// itself has focus, or nothing does (Space held over the board before
+// clicking it). Anywhere else Space belongs to the focused control: it
+// presses a button, ticks a checkbox, follows a link.
+export function spacePansBoard(active, board, body) {
+  return !active || active === body || (Boolean(board) && active === board);
+}
+
 // What the live region reads out for the current person.
 export function describePerson(person, selected) {
   if (!person) return '';

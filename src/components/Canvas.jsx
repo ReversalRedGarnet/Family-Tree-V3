@@ -31,6 +31,7 @@ import {
   describePerson,
   nextCurrent,
   revealView,
+  spacePansBoard,
   startingPerson,
 } from '../utils/boardNav';
 import { createLongPress } from '../utils/longPress';
@@ -204,8 +205,8 @@ const Canvas = forwardRef(function Canvas(
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.code !== 'Space' || e.repeat) return;
-      const tag = document.activeElement?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
+      // Only when Space isn't the focused control's own key (AUDIT F10).
+      if (!spacePansBoard(document.activeElement, containerRef.current, document.body)) return;
       e.preventDefault();
       spaceRef.current = true;
       setSpaceHeld(true);

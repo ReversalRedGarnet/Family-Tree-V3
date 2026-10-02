@@ -6,6 +6,7 @@ import {
   nextCurrent,
   revealView,
   rowsOf,
+  spacePansBoard,
   startingPerson,
 } from './boardNav';
 
@@ -127,5 +128,22 @@ describe('revealView', () => {
   it('takes the zoom into account', () => {
     const zoomed = { x: 0, y: 0, scale: 0.5 };
     expect(revealView(zoomed, size, { x: 1200, y: 300 })).toBe(zoomed); // 600 px on screen
+  });
+});
+
+describe('hold Space to pan (F10)', () => {
+  const board = { name: 'board' };
+  const body = { name: 'body' };
+
+  it('pans when the board, or nothing, has focus', () => {
+    expect(spacePansBoard(board, board, body)).toBe(true);
+    expect(spacePansBoard(body, board, body)).toBe(true);
+    expect(spacePansBoard(null, board, body)).toBe(true);
+  });
+
+  it('leaves Space to any other focused control', () => {
+    expect(spacePansBoard({ name: 'button' }, board, body)).toBe(false);
+    expect(spacePansBoard({ name: 'zoom button inside the board' }, board, body)).toBe(false);
+    expect(spacePansBoard({ name: 'button' }, null, body)).toBe(false);
   });
 });

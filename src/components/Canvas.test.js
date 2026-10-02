@@ -5,7 +5,7 @@
 // which cards React re-renders, and to drive a card's drag handlers.
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createElement as h, forwardRef } from 'react';
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 const { renders, groups } = vi.hoisted(() => ({ renders: [], groups: new Map() }));
 
@@ -126,5 +126,51 @@ describe('cards re-render only when they change (L16)', () => {
     expect(second.onDropOverlap).toHaveBeenCalledWith('a', 'b');
     expect(first.onDropOverlap).not.toHaveBeenCalled();
     expect(second.onMovePerson).not.toHaveBeenCalled();
+  });
+});
+
+describe('Space belongs to the focused control (F10)', () => {
+  // fireEvent returns false when the event's default was prevented, i.e.
+  // when the browser would NOT press the button / tick the box.
+  const pressSpace = (el) => fireEvent.keyDown(el, { key: ' ', code: 'Space' });
+
+  function setup() {
+    render(
+      h(
+        'div',
+        null,
+        h('button', null, 'Export'),
+        h('input', { type: 'checkbox', 'aria-label': 'Living' }),
+        h('a', { href: '#x' }, 'A link'),
+        h(Board, propsFor({ a: person('a', 'Ann', 100) }))
+      )
+    );
+  }
+
+  it('a focused button, checkbox or link keeps Space', () => {
+    setup();
+    for (const el of [screen.getByText('Export'), screen.getByLabelText('Living'), screen.getByText('A link')]) {
+      el.focus();
+      expect(pressSpace(el)).toBe(true);
+    }
+  });
+
+  it('a button inside the board (zoom) keeps Space too', () => {
+    setup();
+    const zoomIn = screen.getByRole('button', { name: 'Zoom in' });
+    zoomIn.focus();
+    expect(pressSpace(zoomIn)).toBe(true);
+  });
+
+  it('with the board focused, or nothing focused, Space is hold-to-pan', () => {
+    setup();
+    const board = screen.getByRole('application', { name: 'Family tree board' });
+    act(() => board.focus());
+    expect(pressSpace(board)).toBe(false);
+    fireEvent.keyUp(board, { key: ' ', code: 'Space' });
+    act(() => board.blur());
+    expect(document.activeElement).toBe(document.body);
+    expect(pressSpace(document.body)).toBe(false);
+    fireEvent.keyUp(document.body, { key: ' ', code: 'Space' });
   });
 });
