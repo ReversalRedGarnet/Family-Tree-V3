@@ -80,6 +80,13 @@ describe('editing a link from the person form (F1, F2)', () => {
     expect(screen.getByRole('radio', { name: 'Deceased' }).getAttribute('aria-checked')).toBe('true');
   });
 
+  it('name fields cap their length (M13)', () => {
+    render(h(Board, { onEditRelationship: () => {} }));
+    expect(screen.getByPlaceholderText('Amara').maxLength).toBe(80);
+    expect(screen.getByPlaceholderText('Okafor').maxLength).toBe(80);
+    expect(screen.getByLabelText('Additional names').maxLength).toBe(80);
+  });
+
   it('opening the form for a different person starts fresh', () => {
     const { rerender } = render(h(Board, { onEditRelationship: () => {} }));
     fireEvent.change(occupation(), { target: { value: 'Pilot' } });

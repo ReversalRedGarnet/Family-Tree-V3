@@ -21,9 +21,8 @@ import {
 } from '../utils/constants';
 import { buildConnectors, findConnectorAt } from '../utils/connectors';
 import { formatName } from '../utils/names';
+import { clampScale, fitScale, minScaleFor } from '../utils/viewport';
 
-const MIN_SCALE = 0.3;
-const MAX_SCALE = 2.4;
 const PAD = 140;
 
 // A touch-originated drag needs the wider, touch-tuned tolerances; a
@@ -228,9 +227,14 @@ const Canvas = forwardRef(function Canvas(
 
   // ---- Zoom / pan ----
 
+  const minScale = useMemo(() => minScaleFor(bounds, size), [bounds, size]);
+  // Read through a ref so zoomAround keeps one identity across renders.
+  const minScaleRef = useRef(minScale);
+  minScaleRef.current = minScale;
+
   const zoomAround = useCallback((factor, cx, cy) => {
     setView((v) => {
-      const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, v.scale * factor));
+      const scale = clampScale(v.scale * factor, minScaleRef.current);
       if (scale === v.scale) return v;
       const worldX = (cx - v.x) / v.scale;
       const worldY = (cy - v.y) / v.scale;
@@ -241,14 +245,15 @@ const Canvas = forwardRef(function Canvas(
   const fitToContent = useCallback(() => {
     const w = bounds.maxX - bounds.minX;
     const h = bounds.maxY - bounds.minY;
-    if (w <= 0 || h <= 0) return;
-    const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.min(size.width / w, size.height / h)));
+    const fit = fitScale(bounds, size);
+    if (fit === null) return;
+    const scale = clampScale(fit, minScale);
     setView({
       scale,
       x: (size.width - w * scale) / 2 - bounds.minX * scale,
       y: (size.height - h * scale) / 2 - bounds.minY * scale,
     });
-  }, [bounds, size]);
+  }, [bounds, size, minScale]);
 
   const handleWheel = useCallback(
     (e) => {
@@ -721,15 +726,19 @@ const Canvas = forwardRef(function Canvas(
         onTouchEnd={handleTouchEnd}
       >
         <Layer>
-          {/* Paper behind everything, so exported images aren't transparent. */}
-          <Rect
-            x={bounds.minX}
-            y={bounds.minY}
-            width={bounds.maxX - bounds.minX}
-            height={bounds.maxY - bounds.minY}
-            fill={exportTheme?.background || '#F6FAFB'}
-            listening={false}
-          />
+          {/* Paper behind everything, so exported images aren't transparent.
+              Only while exporting: on screen it hid the board's grid inside
+              a hard-edged box around the tree. */}
+          {exportTheme && (
+            <Rect
+              x={bounds.minX}
+              y={bounds.minY}
+              width={bounds.maxX - bounds.minX}
+              height={bounds.maxY - bounds.minY}
+              fill={exportTheme.background}
+              listening={false}
+            />
+          )}
 
           <RelationshipLines
             relationships={relationships}
@@ -781,7 +790,7 @@ const Canvas = forwardRef(function Canvas(
               y={bounds.maxY - 52}
               fontFamily={exportTheme?.fontFamily || 'Proxima Nova, proxima-nova, system-ui, sans-serif'}
               fontSize={17}
-              fill={exportTheme?.memoColor || '#5B7C85'}
+              fill={exportTheme?.memoColor || '#4E6E77'}
               listening={false}
             />
           )}
@@ -808,7 +817,7 @@ const Canvas = forwardRef(function Canvas(
             </p>
             <button
               onClick={onAddFirstPerson}
-              className="mt-4 w-full rounded-xl bg-cyan px-4 py-2.5 font-medium text-white transition-all hover:bg-cyan-deep"
+              className="mt-4 w-full rounded-xl bg-cyan-deep px-4 py-2.5 font-medium text-white transition-all hover:bg-ink"
             >
               Add the first person
             </button>

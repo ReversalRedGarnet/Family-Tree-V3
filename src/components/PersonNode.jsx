@@ -10,8 +10,13 @@ const FONT = 'Proxima Nova, proxima-nova, system-ui, sans-serif';
 const HALF_W = W / 2;
 const HALF_H = H / 2;
 
-const LIVING = { fill: '#FFFFFF', title: '#103A44', sub: '#5B7C85' };
-const GONE = { fill: '#EEF3F4', title: '#4A6870', sub: '#7A9299', band: '#7A9299' };
+// Kept in step with EXPORT_THEMES[0].card in constants.js. Every text
+// colour clears 4.5:1 on its fill; the band carries white text (5.5:1).
+const LIVING = { fill: '#FFFFFF', title: '#103A44', sub: '#4E6E77' };
+const GONE = { fill: '#EEF3F4', title: '#4A6870', sub: '#4E6E77', band: '#4E6E77' };
+// A deceased card's outline: quieter than a living card's colour, but
+// still 3:1 against the board so the card's edge stays visible.
+const GONE_STROKE = '#7A9299';
 
 const BAND_HEIGHT = 20;
 
@@ -63,7 +68,7 @@ function PersonNode({
   const name = `${person.firstName || 'Unnamed'} ${person.lastName || ''}`.trim();
   const lifespan = formatLifespan(person);
 
-  const stroke = highlighted ? '#0EA5B7' : selected ? '#0B6E7C' : gone ? '#C3D3D7' : theme;
+  const stroke = highlighted ? '#0EA5B7' : selected ? '#0B6E7C' : gone ? GONE_STROKE : theme;
   const shapeProps = {
     fill: tone.fill,
     stroke,
@@ -90,7 +95,16 @@ function PersonNode({
 
   // Both shapes are full-bleed (neither tapers like the old triangle did),
   // so they share the same text metrics.
-  const nameY = lifespan ? -16 : -8;
+  //
+  // The name gets a box exactly two lines tall: Konva only applies
+  // `ellipsis` to text that has a height, and without one a long name
+  // wrapped down over the lifespan. With a lifespan the box grows upward
+  // from the line just above it, so a one-line name sits where it always
+  // did; without one, the name is centred.
+  const NAME_FONT = 13.5;
+  const NAME_LINE = 1.15;
+  const nameHeight = Math.ceil(NAME_FONT * NAME_LINE * 2);
+  const nameY = lifespan ? -nameHeight : -nameHeight / 2;
   const nameWidth = W - 36;
   const lifespanY = 4;
   const lifespanWidth = W - 36;
@@ -131,11 +145,13 @@ function PersonNode({
         x={-nameWidth / 2}
         y={nameY}
         width={nameWidth}
+        height={nameHeight}
         align="center"
+        verticalAlign={lifespan ? 'bottom' : 'middle'}
         fontFamily={fontFamily}
         fontStyle="600"
-        fontSize={13.5}
-        lineHeight={1.15}
+        fontSize={NAME_FONT}
+        lineHeight={NAME_LINE}
         fill={tone.title}
         wrap="word"
         ellipsis

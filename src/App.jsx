@@ -695,7 +695,9 @@ export default function App() {
       // The template only ever exists for this one capture — the modal's
       // backdrop is covering the board the whole time, so nobody watches
       // it happen, and it's always put back afterward, success or not.
-      const theme = payload.themeId && payload.themeId !== 'board' ? exportThemeFor(payload.themeId) : null;
+      // Set even for the plain "board" template: Canvas only draws its
+      // paper background while a theme is set, i.e. while capturing.
+      const theme = exportThemeFor(payload.themeId || 'board');
       setActiveExportTheme(theme);
       await nextPaint();
       const result = await (kind === 'pdf' ? exportAsPdf : exportAsPng)(

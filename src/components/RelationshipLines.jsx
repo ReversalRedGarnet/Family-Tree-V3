@@ -1,9 +1,15 @@
 import { Fragment, useMemo } from 'react';
 import { Circle, Group, Line, Shape, Text } from 'react-konva';
 import { buildConnectors } from '../utils/connectors';
+import { EXPORT_THEMES } from '../utils/constants';
+
+const BOARD = EXPORT_THEMES[0];
+// Wide enough for a typical label ("Godmother", "Best friend"); anything
+// longer ends in an ellipsis instead of being cut off mid-letter.
+const LABEL_WIDTH = 180;
 
 // --- Midpoint markers. These are the vocabulary the legend teaches. ---
-function Marker({ kind, x, y, color }) {
+function Marker({ kind, x, y, color, paper }) {
   switch (kind) {
     case 'ring-filled':
       return (
@@ -14,7 +20,9 @@ function Marker({ kind, x, y, color }) {
       );
     case 'ring-open':
       return (
-        <Circle x={x} y={y} radius={6} fill="#F6FAFB" stroke={color} strokeWidth={2} listening={false} />
+        // Filled with the paper colour, so the ring reads as open on any
+        // export template, not as an off-white disc.
+        <Circle x={x} y={y} radius={6} fill={paper} stroke={color} strokeWidth={2} listening={false} />
       );
     case 'dot':
       return <Circle x={x} y={y} radius={3.5} fill={color} listening={false} />;
@@ -116,8 +124,8 @@ export default function RelationshipLines({
           onTap={(e) => onSelect?.(connector.relId, e)}
         >
           {highlight}
-          <Line points={connector.segments[0]} {...stroke} hitStrokeWidth={16} />
-          <Marker {...connector.marker} color={style.color} />
+          <Line points={connector.points} {...stroke} hitStrokeWidth={16} />
+          <Marker {...connector.marker} color={style.color} paper={exportTheme?.background || BOARD.background} />
         </Group>
       );
     }
@@ -162,13 +170,15 @@ export default function RelationshipLines({
           <Fragment>
             <Text
               text={connector.label.text}
-              x={connector.label.x - 60}
+              x={connector.label.x - LABEL_WIDTH / 2}
               y={connector.label.y - 16}
-              width={120}
+              width={LABEL_WIDTH}
+              wrap="none"
+              ellipsis
               align="center"
-              fontFamily={exportTheme?.fontFamily || 'Inter'}
+              fontFamily={exportTheme?.fontFamily || BOARD.fontFamily}
               fontSize={10}
-              fill="#5B7C85"
+              fill="#4E6E77"
               listening={false}
             />
           </Fragment>

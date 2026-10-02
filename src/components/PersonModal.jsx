@@ -12,7 +12,7 @@ import {
 import { formatName } from '../utils/names';
 
 const field =
-  'w-full rounded-xl border border-hairline bg-white px-3 py-2.5 text-sm text-ink transition-colors placeholder:text-mist/60 focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/30';
+  'w-full rounded-xl border border-hairline bg-white px-3 py-2.5 text-sm text-ink transition-colors placeholder:text-mist focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/30';
 
 // Inside a wrapping <label>, pass no htmlFor. A field with a hint must
 // instead pass its input's id as htmlFor: the (i) button then sits beside
@@ -72,6 +72,11 @@ function ChoicePair({ options, value, onChange, name }) {
     </div>
   );
 }
+
+// Long enough for any real name, short enough that a pasted paragraph
+// doesn't become one. The card shows two lines and ends longer names with
+// an ellipsis; the sidebar shows the full name on hover.
+const NAME_MAX_LENGTH = 80;
 
 const LIVING_OPTIONS = [
   { id: 'alive', label: 'Alive' },
@@ -195,6 +200,7 @@ export default function PersonModal({
               type="text"
               value={form.firstName || ''}
               placeholder="Amara"
+              maxLength={NAME_MAX_LENGTH}
               onChange={(e) => set('firstName', e.target.value)}
               className={field}
             />
@@ -205,6 +211,7 @@ export default function PersonModal({
               type="text"
               value={form.lastName || ''}
               placeholder="Okafor"
+              maxLength={NAME_MAX_LENGTH}
               onChange={(e) => set('lastName', e.target.value)}
               className={field}
             />
@@ -248,6 +255,7 @@ export default function PersonModal({
             type="text"
             value={form.additionalNames || ''}
             placeholder="Ngozi (née Eze)"
+            maxLength={NAME_MAX_LENGTH}
             onChange={(e) => set('additionalNames', e.target.value)}
             className={field}
           />
@@ -382,7 +390,7 @@ export default function PersonModal({
         </button>
         <button
           onClick={() => onSave(form)}
-          className="flex-1 rounded-xl bg-cyan px-4 py-2.5 font-medium text-white transition-colors hover:bg-cyan-deep"
+          className="flex-1 rounded-xl bg-cyan-deep px-4 py-2.5 font-medium text-white transition-colors hover:bg-ink"
         >
           {mode === 'edit' ? 'Save changes' : 'Add person'}
         </button>

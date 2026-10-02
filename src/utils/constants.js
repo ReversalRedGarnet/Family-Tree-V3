@@ -97,14 +97,17 @@ export const LINE_STYLES = {
   separated:  { color: '#7A9299', width: 2,   dash: [4, 6],   marker: 'none',        label: 'Separated' },
   divorced:   { color: '#7A9299', width: 2,   dash: [4, 6],   marker: 'break',       label: 'Divorced' },
   widowed:    { color: '#7A9299', width: 2.5, dash: null,     marker: 'none',        label: 'Widowed' },
-  parent:     { color: '#0EA5B7', width: 2,   dash: null,     marker: 'none',        label: 'Parent and child' },
+  // Every line colour clears 3:1 against the board (#F6FAFB), the WCAG
+  // minimum for graphics: parent 4.1:1, parentSoft 3.4:1, other 3.5:1.
+  // parentSoft stays the lighter of the two parent blues, and is dashed.
+  parent:     { color: '#0B8796', width: 2,   dash: null,     marker: 'none',        label: 'Parent and child' },
   // Covers every PARENT_TYPES entry except 'birth' — step, adoptive, foster,
   // guardian and ward alike. Named generically on purpose: a fixed list here
   // ("Step / adoptive") drifted out of sync with PARENT_TYPES once foster,
   // guardian and ward were added, and would drift again the next time a
   // type is. One label, derived from the same rule the line style itself
   // uses (constants.js's `soft` check: type !== 'birth'), can't drift.
-  parentSoft: { color: '#7FD3DD', width: 2,   dash: [6, 4],   marker: 'none',        label: 'Non-birth parent' },
+  parentSoft: { color: '#2F94A2', width: 2,   dash: [6, 4],   marker: 'none',        label: 'Non-birth parent' },
   sibling:    { color: '#7A9299', width: 2,   dash: [2, 5],   marker: 'none',        label: 'Siblings (full)' },
   // Same arch, same dash — only the colour differs, matching how parent
   // vs. parentSoft are also distinguished by colour alone (both leave
@@ -119,7 +122,7 @@ export const LINE_STYLES = {
   // anyone, not only colour-blind readers). This muted indigo clears
   // 12:1 against the board and 3.9:1 against `sibling`.
   siblingSoft: { color: '#332F4D', width: 2,  dash: [2, 5],   marker: 'none',        label: 'Siblings (half / step / adopted)' },
-  other:      { color: '#A8BEC4', width: 1.75, dash: [1, 5],  marker: 'none',        label: 'Other link' },
+  other:      { color: '#6F8990', width: 1.75, dash: [1, 5],  marker: 'none',        label: 'Other link' },
 };
 
 // ---- Layout ----
@@ -188,10 +191,10 @@ export const EXPORT_THEMES = [
     description: 'Exactly how it looks on screen.',
     background: '#F6FAFB',
     fontFamily: 'Proxima Nova, proxima-nova, system-ui, sans-serif',
-    memoColor: '#5B7C85',
+    memoColor: '#4E6E77',
     card: {
-      living: { fill: '#FFFFFF', title: '#103A44', sub: '#5B7C85' },
-      gone: { fill: '#EEF3F4', title: '#4A6870', sub: '#7A9299', band: '#7A9299' },
+      living: { fill: '#FFFFFF', title: '#103A44', sub: '#4E6E77' },
+      gone: { fill: '#EEF3F4', title: '#4A6870', sub: '#4E6E77', band: '#4E6E77' },
     },
   },
   {

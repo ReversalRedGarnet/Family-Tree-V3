@@ -43,7 +43,7 @@ function YearInput({ value, onChange, placeholder, disabled }) {
       placeholder={placeholder}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 4))}
-      className={`${field} disabled:bg-paper disabled:text-mist/50`}
+      className={`${field} disabled:bg-paper disabled:text-mist`}
     />
   );
 }
@@ -199,7 +199,7 @@ export default function RelationshipModal({
               name="relationship-kind"
               checked={kind === option.id}
               onChange={() => setKind(option.id)}
-              className="mt-0.5 h-4 w-4 accent-[#0EA5B7]"
+              className="mt-0.5 h-4 w-4 accent-[#0B6E7C]"
             />
             <span className="min-w-0">
               <span className="block text-sm font-medium text-ink">{option.label}</span>
@@ -254,7 +254,7 @@ export default function RelationshipModal({
                         name="who-died"
                         checked={deceasedId === id}
                         onChange={() => setDeceasedId(id)}
-                        className="h-4 w-4 accent-[#0EA5B7]"
+                        className="h-4 w-4 accent-[#0B6E7C]"
                       />
                       <span className="text-sm text-ink">{nameOf(id)}</span>
                     </label>
@@ -406,7 +406,7 @@ export default function RelationshipModal({
           onClick={submit}
           disabled={blocked}
           title={blocked ? 'Choose which of them has passed away first' : undefined}
-          className="flex-1 rounded-xl bg-cyan px-4 py-2.5 font-medium text-white transition-colors hover:bg-cyan-deep disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex-1 rounded-xl bg-cyan-deep px-4 py-2.5 font-medium text-white transition-colors hover:bg-ink disabled:cursor-not-allowed disabled:opacity-40"
         >
           {editing ? 'Save changes' : 'Link them'}
         </button>

@@ -65,7 +65,7 @@ class ErrorBoundary extends Component {
           minHeight: '100vh',
           padding: '2rem',
           background: '#F6FAFB',
-          fontFamily: 'Inter, system-ui, sans-serif',
+          fontFamily: '"Proxima Nova", proxima-nova, system-ui, sans-serif',
         }}
       >
         <div
@@ -82,7 +82,7 @@ class ErrorBoundary extends Component {
           <h1 style={{ margin: 0, fontSize: '1.25rem', color: '#103A44' }}>
             The board stopped responding
           </h1>
-          <p style={{ margin: '0.75rem 0 0', fontSize: '0.875rem', lineHeight: 1.6, color: '#5B7C85' }}>
+          <p style={{ margin: '0.75rem 0 0', fontSize: '0.875rem', lineHeight: 1.6, color: '#4E6E77' }}>
             Reloading picks the tree back up from its last autosave — nothing
             from before this happened is lost.
           </p>
@@ -95,7 +95,7 @@ class ErrorBoundary extends Component {
                 borderRadius: '0.5rem',
                 fontFamily: 'ui-monospace, monospace',
                 fontSize: '0.7rem',
-                color: '#5B7C85',
+                color: '#4E6E77',
                 wordBreak: 'break-word',
               }}
             >
@@ -119,7 +119,7 @@ class ErrorBoundary extends Component {
           >
             Reload the page
           </button>
-          <p style={{ margin: '1rem 0 0', fontSize: '0.8rem', lineHeight: 1.5, color: '#5B7C85' }}>
+          <p style={{ margin: '1rem 0 0', fontSize: '0.8rem', lineHeight: 1.5, color: '#4E6E77' }}>
             If this keeps happening, the saved tree itself may be the problem.
           </p>
           <button onClick={this.downloadBackup} style={secondaryButton}>
