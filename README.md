@@ -238,9 +238,12 @@ layout**, or a new link that changes their generation.
 
 - **Pan:** two-finger scroll on a trackpad (up/down and sideways), the middle
   mouse button, Space + drag, or one finger on empty board on a touch screen.
-  Space + drag works while the board has focus or nothing does; while a
-  button or other control has focus, Space presses that instead, so click
-  the board first.
+  Space + drag works whatever has focus, except a text field or drop-down. If
+  a button has focus, pressing Space on its own still presses it; a Space +
+  drag pan doesn't.
+- **Arrow keys** pan the board too (Shift + arrow pans further) while nobody
+  is selected and the board, or nothing, has focus. With someone selected
+  they move between people instead (see below).
 - **Zoom:** the mouse wheel, a trackpad pinch, a two-finger pinch on touch,
   or the − / + buttons. One mouse-wheel notch is about 10%.
 - **Fit everyone on screen** (⤢). Zooming out stops at 30%, or further out
@@ -282,9 +285,13 @@ several.
 keyboard focus, a dashed ring marks the current person, and screen readers
 read out their name, years, and whether they're selected.
 
-- **Arrow keys** move between people: left and right along a row, up and down
-  to the nearest person in the row above or below. **Home** and **End** go to
-  the ends of the row. The board pans to keep the person on screen.
+- **Arrow keys**, while someone is selected or the ring is on someone, move
+  between people: left and right along a row, up and down to the nearest
+  person in the row above or below. **Home** and **End** go to the ends of
+  the row. The board pans to keep the person on screen. With nobody selected
+  and no ring, the arrows pan the board instead. **Escape** clears the
+  selection and hides the ring, so the arrows go back to panning; click a
+  card, or Tab away and back, to move between people again.
 - Moving selects the person you land on. **Shift** with an arrow adds them to
   the selection instead, so you can pick two people to link.
 - **Space** selects or deselects the current person. (After a mouse click on
