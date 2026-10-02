@@ -108,7 +108,10 @@ class ErrorBoundary extends Component {
               marginTop: '1.25rem',
               width: '100%',
               padding: '0.7rem 1rem',
-              background: '#0EA5B7',
+              // cyan-deep, as on every other primary button: white text on it is
+              // 5.94:1 (bright cyan #0EA5B7 was 2.96:1). contrast.test.js renders
+              // this screen and checks every colour pair on it.
+              background: '#0B6E7C',
               color: '#fff',
               border: 'none',
               borderRadius: '0.75rem',
