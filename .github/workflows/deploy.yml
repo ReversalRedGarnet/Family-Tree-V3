@@ -1,6 +1,6 @@
 name: Deploy to GitHub Pages
 
-# Pull requests into main get the same install, test and build as main
+# Pull requests into main get the same install, lint, test and build as main
 # itself, so a broken change shows up on the PR before it can merge. Only a
 # push to main deploys.
 on:
@@ -40,6 +40,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Lint
+        # ESLint, including the React hooks rules (eslint.config.js). An
+        # error stops here; warnings are reported but don't fail the run.
+        run: npm run lint
 
       - name: Test
         # A failing test stops here, so nothing broken gets deployed.
