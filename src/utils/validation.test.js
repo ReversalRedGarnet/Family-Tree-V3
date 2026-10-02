@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateRelationship, findDuplicatePerson, describeDeleteImpact } from './validation';
+import { validateRelationship, findDuplicatePerson, describeDeleteImpact, collectTreeWarnings } from './validation';
 
 function person(id, overrides = {}) {
   return { id, firstName: 'First', lastName: `${id}`, ...overrides };
@@ -147,5 +147,99 @@ describe('describeDeleteImpact', () => {
     const result = describeDeleteImpact('a', {}, relationships);
     expect(result.linkCount).toBe(3);
     expect(result.childCount).toBe(2);
+  });
+});
+
+describe('validateRelationship: generation consistency', () => {
+  const people = {
+    g: person('g'), c: person('c'), k: person('k'), a: person('a'), b: person('b'), d: person('d'), x: person('x'),
+  };
+
+  it('rejects making one partner the parent of the other', () => {
+    const rels = { r1: { kind: 'partner', a: 'a', b: 'b' } };
+    const result = validateRelationship('parent', 'a', 'b', people, rels);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/same generation/);
+  });
+
+  it('rejects making one sibling the parent of the other', () => {
+    const rels = { r1: { kind: 'sibling', a: 'a', b: 'b' } };
+    expect(validateRelationship('parent', 'a', 'b', people, rels).ok).toBe(false);
+  });
+
+  it('rejects a grandparent and grandchild becoming partners or siblings', () => {
+    const rels = { r1: { kind: 'parent', a: 'g', b: 'c' }, r2: { kind: 'parent', a: 'c', b: 'k' } };
+    const partner = validateRelationship('partner', 'g', 'k', people, rels);
+    expect(partner.ok).toBe(false);
+    expect(partner.error).toMatch(/2 generations below/);
+    expect(validateRelationship('sibling', 'g', 'k', people, rels).ok).toBe(false);
+  });
+
+  it('rejects linking someone as a sibling of their uncle through an existing sibling', () => {
+    // b and c are siblings, d is c's child, a is d's sibling: a and b are a
+    // generation apart, so a-b can't be siblings.
+    const rels = {
+      r1: { kind: 'sibling', a: 'b', b: 'c' },
+      r2: { kind: 'parent', a: 'c', b: 'd' },
+      r3: { kind: 'sibling', a: 'a', b: 'd' },
+    };
+    const result = validateRelationship('sibling', 'a', 'b', people, rels);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/1 generation above/);
+  });
+
+  it('rejects making a nephew the parent of his uncle', () => {
+    const rels = { r1: { kind: 'sibling', a: 'b', b: 'c' }, r2: { kind: 'parent', a: 'c', b: 'd' } };
+    expect(validateRelationship('parent', 'd', 'b', people, rels).ok).toBe(false);
+  });
+
+  it('still allows links that agree with existing generations', () => {
+    // An aunt adopting her niece: already exactly one generation apart.
+    const auntNiece = { r1: { kind: 'sibling', a: 'a', b: 'c' }, r2: { kind: 'parent', a: 'c', b: 'd' } };
+    expect(validateRelationship('parent', 'a', 'd', people, auntNiece).ok).toBe(true);
+    // Cousins marrying: same generation.
+    const cousins = {
+      r1: { kind: 'sibling', a: 'g', b: 'x' },
+      r2: { kind: 'parent', a: 'g', b: 'a' },
+      r3: { kind: 'parent', a: 'x', b: 'b' },
+    };
+    expect(validateRelationship('partner', 'a', 'b', people, cousins).ok).toBe(true);
+    // Two people with nothing connecting them yet.
+    expect(validateRelationship('parent', 'a', 'b', people, {}).ok).toBe(true);
+  });
+
+  it('places no generation constraint on an "other" link', () => {
+    const rels = { r1: { kind: 'parent', a: 'g', b: 'c' }, r2: { kind: 'parent', a: 'c', b: 'k' } };
+    expect(validateRelationship('other', 'g', 'k', people, rels).ok).toBe(true);
+  });
+});
+
+describe('collectTreeWarnings', () => {
+  it('judges age gaps against birth parents only', () => {
+    const people = {
+      child: person('child', { birthYear: '2000' }),
+      mum: person('mum', { firstName: 'Mum', birthYear: '1975' }),
+      step: person('step', { firstName: 'Step', birthYear: '1995' }),
+    };
+    const rels = {
+      r1: { kind: 'parent', a: 'mum', b: 'child', type: 'birth' },
+      r2: { kind: 'parent', a: 'step', b: 'child', type: 'step' },
+    };
+    expect(collectTreeWarnings(people, rels)).toEqual([]);
+  });
+
+  it('checks every birth parent, not just the first two', () => {
+    const people = {
+      child: person('child', { birthYear: '2000' }),
+      p1: person('p1', { firstName: 'One', birthYear: '1970' }),
+      p2: person('p2', { firstName: 'Two', birthYear: '1972' }),
+      p3: person('p3', { firstName: 'Three', birthYear: '1995' }),
+    };
+    const rels = {
+      r1: { kind: 'parent', a: 'p1', b: 'child' },
+      r2: { kind: 'parent', a: 'p2', b: 'child' },
+      r3: { kind: 'parent', a: 'p3', b: 'child' },
+    };
+    expect(collectTreeWarnings(people, rels).map((w) => w.message)).toEqual(['Three would only have been 5 — worth a check.']);
   });
 });

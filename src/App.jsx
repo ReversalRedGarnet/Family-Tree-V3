@@ -470,7 +470,15 @@ export default function App() {
         // doesn't change who anyone's existing children are, so planning
         // against the snapshot from before it landed is exactly right,
         // the same way planSiblingMerge plans its merge above.
-        const candidates = findUnlinkedPartnerChildren(aId, bId, relationships);
+        //
+        // Only children who could actually be the other partner's child
+        // are asked about -- checked against the board as it will be once
+        // this partnership exists, so a "yes" can never write a link that
+        // contradicts someone's generation or ancestry.
+        const withPartnership = { ...relationships, pending: { id: 'pending', kind: 'partner', a: aId, b: bId } };
+        const candidates = findUnlinkedPartnerChildren(aId, bId, relationships).filter(
+          (c) => validateRelationship('parent', c.candidateParentId, c.childId, people, withPartnership).ok
+        );
         if (candidates.length) askAboutSharedChildren(candidates, []);
       }
     },
@@ -524,7 +532,7 @@ export default function App() {
   const handleConflictClick = useCallback(
     (id) => {
       pushToast(
-        `${nameOf(id)} has a relationship that contradicts itself — for example, a link that would make them their own ancestor. They're pinned to row 0 until the conflicting link is removed or corrected.`,
+        `${nameOf(id)} has links that contradict each other — for example, two links that put them in different generations. Their row comes from whichever link placed them first; remove or correct the contradicting link to fix it.`,
         'warning',
         7000
       );

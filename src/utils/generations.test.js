@@ -12,6 +12,7 @@ import {
   planSiblingMerge,
   findUnlinkedPartnerChildren,
   partnerChildLinksToWrite,
+  generationOffset,
 } from './generations';
 
 function people(...ids) {
@@ -268,9 +269,13 @@ describe('planSiblingMerge', () => {
   });
 
   it('skips an implied pair that would contradict an existing parent/partner link, without blocking the whole merge', () => {
+    // (A parent link here would also put a1 a generation above b1, which
+    // now blocks the explicit pair outright -- see the generations tests
+    // below -- so a partner link is the contradiction that still leaves
+    // the explicit pair valid.)
     const rels = {
       r1: { kind: 'sibling', a: 'a1', b: 'a2' },
-      r2: { kind: 'parent', a: 'a2', b: 'b1' }, // a2 is b1's parent -- can't also be siblings
+      r2: { kind: 'partner', a: 'a2', b: 'b1' }, // a2 and b1 are partners -- can't also be siblings
     };
     const result = planSiblingMerge('a1', 'b1', 'full', rels);
     expect(result.blocked).toBeNull();
@@ -316,5 +321,75 @@ describe('findUnlinkedPartnerChildren / partnerChildLinksToWrite', () => {
   it('converts accepted candidates into parent links in the right direction', () => {
     const accepted = [{ childId: 'kid', existingParentId: 'a', candidateParentId: 'b' }];
     expect(partnerChildLinksToWrite(accepted)).toEqual([{ kind: 'parent', a: 'b', b: 'kid' }]);
+  });
+});
+
+describe('generationOffset', () => {
+  const all = people('g', 'c', 'k', 'u', 'x');
+  const rels = {
+    r1: { kind: 'parent', a: 'g', b: 'c' },
+    r2: { kind: 'parent', a: 'c', b: 'k' },
+    r3: { kind: 'sibling', a: 'c', b: 'u' },
+  };
+
+  it('counts generations down (positive) and up (negative) along existing links', () => {
+    expect(generationOffset('g', 'k', all, rels)).toBe(2);
+    expect(generationOffset('k', 'g', all, rels)).toBe(-2);
+    expect(generationOffset('u', 'k', all, rels)).toBe(1);
+  });
+
+  it('is 0 for the same row and null when nothing connects the two', () => {
+    expect(generationOffset('c', 'u', all, rels)).toBe(0);
+    expect(generationOffset('g', 'x', all, rels)).toBeNull();
+  });
+
+  it('ignores "other" links', () => {
+    expect(generationOffset('g', 'x', all, { ...rels, r4: { kind: 'other', a: 'g', b: 'x' } })).toBeNull();
+  });
+});
+
+describe('inferSiblingType: non-birth parents', () => {
+  it('does not call them half when the only second parent on record is a step parent', () => {
+    const rels = {
+      r1: { kind: 'parent', a: 'mom', b: 'a' },
+      r2: { kind: 'parent', a: 'dad', b: 'a' },
+      r3: { kind: 'parent', a: 'mom', b: 'b' },
+      r4: { kind: 'parent', a: 'stepdad', b: 'b', type: 'step' },
+    };
+    expect(inferSiblingType('a', 'b', rels)).toBeNull();
+  });
+
+  it('calls them adopted when the one shared parent is adoptive for either side', () => {
+    const rels = {
+      r1: { kind: 'parent', a: 'mom', b: 'a', type: 'adoptive' },
+      r2: { kind: 'parent', a: 'dad1', b: 'a' },
+      r3: { kind: 'parent', a: 'mom', b: 'b' },
+      r4: { kind: 'parent', a: 'dad2', b: 'b' },
+    };
+    expect(inferSiblingType('a', 'b', rels)?.type).toBe('adopted');
+  });
+});
+
+describe('planSiblingMerge: generations', () => {
+  it('blocks the merge when the existing links put the explicit pair a generation apart', () => {
+    // a's group is {a, n}; b's group is {b, u}; u is n's parent. So a (n's
+    // sibling) is a generation below b (u's sibling): they can't be
+    // siblings, and nothing at all is written.
+    const rels = {
+      r1: { kind: 'sibling', a: 'a', b: 'n' },
+      r2: { kind: 'sibling', a: 'b', b: 'u' },
+      r3: { kind: 'parent', a: 'u', b: 'n' },
+    };
+    const { pairs, skipped, blocked } = planSiblingMerge('a', 'b', 'full', rels);
+    expect(blocked).not.toBeNull();
+    expect(pairs).toEqual([]);
+    expect(skipped).toBe(0);
+  });
+
+  it('still merges same-generation groups as before', () => {
+    const rels = { r1: { kind: 'sibling', a: 'a', b: 'c' } };
+    const { pairs, blocked } = planSiblingMerge('a', 'b', 'full', rels);
+    expect(blocked).toBeNull();
+    expect(pairs.map((p) => [p.a, p.b])).toEqual([['a', 'b'], ['c', 'b']]);
   });
 });

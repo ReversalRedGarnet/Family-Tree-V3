@@ -79,6 +79,30 @@ export function computeGenerations(people, relationships) {
   return { generation, conflicts };
 }
 
+// How many generations below `aId` the existing links already put `bId`
+// (negative = above, 0 = same row), or null if nothing connects them yet.
+// Walks the same constraint edges computeGenerations does, so it's the
+// question to ask BEFORE adding a link: a parent link needs this to be 1 (or
+// null), a partner or sibling link needs 0 (or null), and anything else
+// would put someone in two generations at once.
+export function generationOffset(aId, bId, people, relationships) {
+  if (!people[aId] || !people[bId]) return null;
+  if (aId === bId) return 0;
+  const adj = buildAdjacency(people, relationships);
+  const offset = new Map([[aId, 0]]);
+  const queue = [aId];
+  while (queue.length) {
+    const current = queue.shift();
+    for (const { to, delta } of adj.get(current) || []) {
+      if (offset.has(to)) continue;
+      offset.set(to, offset.get(current) + delta);
+      if (to === bId) return offset.get(to);
+      queue.push(to);
+    }
+  }
+  return null;
+}
+
 // Every ancestor of `personId`, walking up parent links.
 export function ancestorsOf(personId, people, relationships) {
   const found = new Set();
@@ -183,6 +207,12 @@ export function partnerChildLinksToWrite(accepted) {
   return accepted.map((c) => ({ kind: 'parent', a: c.candidateParentId, b: c.childId }));
 }
 
+// A parent link with no type recorded predates the type field, and every
+// such link was a birth link.
+export function isBirthLink(rel) {
+  return Boolean(rel) && (!rel.type || rel.type === 'birth');
+}
+
 // Works out what kind of siblings two people are from the parents already on
 // the board, so the user isn't re-deriving it by hand every time.
 //
@@ -218,11 +248,26 @@ export function inferSiblingType(aId, bId, relationships) {
   }
 
   if (shared.length === 1) {
-    // Only a confident call once both sides have a second parent on record.
-    if (aParents.length >= 2 && bParents.length >= 2) {
+    // Shared through an adoptive, step, foster or guardian link on either
+    // side: that's an adopted sibling relationship, same as above.
+    const [parentId] = shared;
+    const aRel = aParentRels.find((r) => r.a === parentId);
+    const bRel = bParentRels.find((r) => r.a === parentId);
+    if (!isBirthLink(aRel) || !isBirthLink(bRel)) {
+      return {
+        type: 'adopted',
+        reason: 'They share one recorded parent, and at least one of those links is not a birth parent.',
+      };
+    }
+    // Only a confident call once both sides have a second BIRTH parent on
+    // record — a step or adoptive parent says nothing about who the other
+    // birth parent is, so it can't rule out full siblings.
+    const aBirth = aParentRels.filter(isBirthLink).length;
+    const bBirth = bParentRels.filter(isBirthLink).length;
+    if (aBirth >= 2 && bBirth >= 2) {
       return { type: 'half', reason: 'They share one parent, but not the other.' };
     }
-    return null; // second parent missing — genuinely can't tell yet
+    return null; // second birth parent missing — genuinely can't tell yet
   }
 
   // No parent in common. If their parents are partners, that's a step link.
@@ -291,12 +336,26 @@ export function planSiblingMerge(aId, bId, type, relationships) {
   // partners can't ALSO become siblings — the same contradiction
   // validateRelationship refuses for the explicit pair, just reached here
   // through the merge instead of a direct drag.
-  const contradicts = (x, y) =>
-    Object.values(relationships).some(
+  //
+  // Same for a pair the existing links already put in different generations
+  // (an uncle and nephew, say) — siblings share a row by definition. Only
+  // the people the relationships mention can be connected at all, so they
+  // stand in for the full people map here.
+  const linked = {};
+  Object.values(relationships).forEach((rel) => {
+    linked[rel.a] = true;
+    linked[rel.b] = true;
+  });
+  const contradicts = (x, y) => {
+    const direct = Object.values(relationships).some(
       (rel) =>
         (rel.kind === 'parent' || rel.kind === 'partner') &&
         ((rel.a === x && rel.b === y) || (rel.a === y && rel.b === x))
     );
+    if (direct) return true;
+    const offset = generationOffset(x, y, linked, relationships);
+    return offset !== null && offset !== 0;
+  };
 
   // Every caller today runs validateRelationship on the explicit (aId, bId)
   // pair before ever reaching this function, so in practice this never

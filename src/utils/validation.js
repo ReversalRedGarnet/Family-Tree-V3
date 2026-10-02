@@ -1,4 +1,4 @@
-import { wouldCreateCycle, parentsOf, activePartnersOf } from './generations';
+import { wouldCreateCycle, activePartnersOf, generationOffset, isBirthLink } from './generations';
 import { getPersonDateWarnings, getParentChildAgeWarnings } from './dates';
 import { formatName } from './names';
 
@@ -106,7 +106,32 @@ export function validateRelationship(kind, aId, bId, people, relationships) {
     }
   }
 
+  // The general rule behind every check above: a link must agree with the
+  // generations the existing links already give these two people. A parent
+  // sits exactly one row above their child; partners and siblings share a
+  // row. Anything else would put someone in two generations at once.
+  const required = kind === 'parent' ? 1 : kind === 'partner' || kind === 'sibling' ? 0 : null;
+  if (required !== null) {
+    const offset = generationOffset(aId, bId, people, relationships);
+    if (offset !== null && offset !== required) {
+      return { ok: false, error: generationConflictMessage(kind, offset, displayName(people, aId), displayName(people, bId)) };
+    }
+  }
+
   return { ok: true };
+}
+
+// `offset` is how many generations below A the existing links put B.
+function generationConflictMessage(kind, offset, aName, bName) {
+  const gens = (n) => `${n} generation${n === 1 ? '' : 's'}`;
+  const where =
+    offset === 0
+      ? `${aName} and ${bName} are already in the same generation`
+      : offset > 0
+        ? `${bName} is already ${gens(offset)} below ${aName}`
+        : `${bName} is already ${gens(-offset)} above ${aName}`;
+  if (kind === 'parent') return `${where}, so ${aName} can't be ${bName}'s parent.`;
+  return `${where}, so they can't be ${kind === 'partner' ? 'partners' : 'siblings'}.`;
 }
 
 export function describeDeleteImpact(personId, people, relationships) {
@@ -163,10 +188,13 @@ export function collectTreeWarnings(people, relationships) {
   Object.values(people).forEach((person) => {
     getPersonDateWarnings(person).forEach((message) => note(person, message));
 
-    const parents = parentsOf(person.id, relationships).map((id) => people[id]).filter(Boolean);
-    getParentChildAgeWarnings(person, parents[0], parents[1]).forEach((message) =>
-      note(person, message)
-    );
+    // Age gaps only say something about birth parents: a step-parent five
+    // years older than their stepchild is entirely ordinary.
+    const birthParents = Object.values(relationships)
+      .filter((rel) => rel.kind === 'parent' && rel.b === person.id && isBirthLink(rel))
+      .map((rel) => people[rel.a])
+      .filter(Boolean);
+    getParentChildAgeWarnings(person, ...birthParents).forEach((message) => note(person, message));
   });
 
   return warnings;
