@@ -164,6 +164,10 @@ export const ORIGIN_X = 360;
 // away still reads as clear despite floating-point drift.
 export const MIN_SLOT_GAP = SLOT_STEP - 1;
 
+// A hand-dropped card that lands overlapping a neighbour is nudged to sit
+// this far from it, centre to centre: just clear, with a small visible gap.
+export const DROP_CLEARANCE = CARD_WIDTH + 12;
+
 // ---- Breakpoint used by the responsive layout ----
 export const MOBILE_BREAKPOINT = 768;
 

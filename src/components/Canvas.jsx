@@ -571,15 +571,29 @@ const Canvas = forwardRef(function Canvas(
 
   const handleDragEnd = useCallback(
     (personId, x, y, node) => {
+      // A card can be dragged anywhere -- across rows, to reach someone to
+      // link with or a line to drop onto -- but it only ever RESTS on its
+      // own row. So whatever the drop turns out to be, every dragged card is
+      // first put back exactly where it started, and the commit that follows
+      // (if any) re-renders it from state at the spot it actually settles:
+      // its row, at the dropped x, nudged only if it would overlap someone.
+      // Doing it here, before React re-renders, means a card never flickers
+      // at the point it was let go -- and a prop that ends up unchanged
+      // (dropped back on its own spot) can't leave the node stranded there.
       const group = groupDragRef.current;
       if (group && group.anchorId === personId) {
         groupDragRef.current = null;
         setTouchDrag(false);
+        node?.position(group.anchorStart);
+        group.others.forEach((o) => nodeRefs.current[o.id]?.position({ x: o.x, y: o.y }));
+        stageRef.current?.batchDraw();
         const dx = x - group.anchorStart.x;
-        const dy = y - group.anchorStart.y;
-        const updates = { [personId]: { x, y } };
+        // A jitter of a pixel or two isn't a move, and shouldn't cost an
+        // undo step.
+        if (Math.abs(dx) < 2) return;
+        const updates = { [personId]: { x } };
         group.others.forEach((o) => {
-          updates[o.id] = { x: o.x + dx, y: o.y + dy };
+          updates[o.id] = { x: o.x + dx };
         });
         onMoveMany(updates);
         return;
@@ -590,24 +604,23 @@ const Canvas = forwardRef(function Canvas(
       setTouchDrag(false);
 
       const drop = findDropTarget(personId, x, y);
+      const origin = people[personId]?.position;
+      if (origin && node) {
+        node.position({ x: origin.x, y: origin.y });
+        node.getLayer()?.batchDraw();
+      }
 
-      // Both drop gestures are questions, not moves: the card goes back
-      // where it came from and a dialog opens. Putting it back here rather
-      // than waiting for a re-render means it never flickers at the drop
-      // point, and — since nothing is committed — the board is left exactly
-      // as it was if the dialog is cancelled.
+      // Both drop gestures are questions, not moves: a dialog opens and,
+      // since nothing is committed, the board is left exactly as it was if
+      // the dialog is cancelled.
       if (drop) {
-        const origin = people[personId]?.position;
-        if (origin && node) {
-          node.position({ x: origin.x, y: origin.y });
-          node.getLayer()?.batchDraw();
-        }
         if (drop.kind === 'person') onDropOverlap(personId, drop.personId);
         else onDropOnConnector?.(drop.connector.parentIds, personId);
         return;
       }
 
-      onMovePerson(personId, x, y);
+      if (!origin || Math.abs(x - origin.x) < 2) return;
+      onMovePerson(personId, x);
     },
     [findDropTarget, people, onDropOverlap, onDropOnConnector, onMovePerson, onMoveMany]
   );

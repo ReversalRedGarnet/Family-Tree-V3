@@ -75,3 +75,55 @@ describe('useFamilyTree.updateRelationship', () => {
     expect(result.current.relationships[relId].status).toBe('together');
   });
 });
+
+describe('useFamilyTree drops', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('keeps a dropped card at the exact x, on its row, through later unrelated edits', () => {
+    const { result, a, b } = setup();
+    const row = result.current.people[a].position.y;
+    act(() => {
+      result.current.movePerson(a, 1234.5);
+    });
+    expect(result.current.people[a].position).toEqual({ x: 1234.5, y: row });
+
+    act(() => {
+      result.current.updatePerson(b, { firstName: 'Robert' });
+    });
+    act(() => {
+      result.current.addRelative({ firstName: 'Cy' });
+    });
+    expect(result.current.people[a].position).toEqual({ x: 1234.5, y: row });
+  });
+
+  it('moves only the dropped card when it lands overlapping someone', () => {
+    const { result, a, b } = setup();
+    const bBefore = result.current.people[b].position.x;
+    act(() => {
+      result.current.movePerson(a, bBefore + 20);
+    });
+    expect(result.current.people[b].position.x).toBe(bBefore);
+    expect(Math.abs(result.current.people[a].position.x - bBefore)).toBeGreaterThanOrEqual(158);
+  });
+
+  it('writes nothing when a card is dropped back where it already rests', () => {
+    const { result, a, relId } = setup();
+    act(() => {
+      result.current.movePerson(a, 2000);
+    });
+    act(() => {
+      result.current.movePerson(a, 2000);
+    });
+    // One undo reverses the real move; the second undo is the link itself.
+    act(() => {
+      result.current.undo();
+    });
+    expect(result.current.people[a].position.x).not.toBe(2000);
+    act(() => {
+      result.current.undo();
+    });
+    expect(result.current.relationships[relId]).toBeUndefined();
+  });
+});

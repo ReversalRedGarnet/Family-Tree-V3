@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { findNearestFreeX, slotX, nearestSlotIndex, placeCard, idealX, autoLayout, reflowAll } from './layout';
-import { ORIGIN_X, SLOT_STEP } from './constants';
+import { findNearestFreeX, slotX, nearestSlotIndex, placeCard, idealX, autoLayout, reflowAll, settleDroppedX, rowY } from './layout';
+import { ORIGIN_X, SLOT_STEP, CARD_WIDTH, DROP_CLEARANCE } from './constants';
 
 describe('slotX / nearestSlotIndex', () => {
   it('round-trips a slot index through slotX and back', () => {
@@ -312,5 +312,65 @@ describe('reflowAll', () => {
     // Five grandchildren reserve five slots under "busy"; a plain sibling
     // pair with no descendants at all would sit exactly one slot apart.
     expect(busyToQuiet).toBeGreaterThan(SLOT_STEP);
+  });
+});
+
+describe('hand-placed cards stay put', () => {
+  const placed = (id, x, extra = {}) => ({ id, placed: true, placedGen: 0, position: { x, y: rowY(0) }, ...extra });
+
+  it('never moves two dragged cards 180px apart on an unrelated layout pass', () => {
+    // 180px apart: closer than one lattice slot, but the cards (158px wide)
+    // don't touch. Both were put there by hand, so both stay.
+    const graph = { people: { a: placed('a', 360), b: placed('b', 540), c: { id: 'c', position: { x: 1200, y: 0 } } }, relationships: {} };
+    const result = autoLayout(graph);
+    expect(result.people.a.position.x).toBe(360);
+    expect(result.people.b.position.x).toBe(540);
+  });
+
+  it('never moves a dragged card even when another dragged card overlaps it', () => {
+    const graph = { people: { a: placed('a', 360), b: placed('b', 400) }, relationships: {} };
+    const result = autoLayout(graph);
+    expect(result.people.a.position.x).toBe(360);
+    expect(result.people.b.position.x).toBe(400);
+  });
+
+  it('moves an automatically placed card out of a dragged card\'s way, not the other way round', () => {
+    const graph = { people: { a: placed('a', 365.5), auto: { id: 'auto', position: { x: 360, y: 0 } } }, relationships: {} };
+    const result = autoLayout(graph);
+    expect(result.people.a.position.x).toBe(365.5);
+    expect(Math.abs(result.people.auto.position.x - 365.5)).toBeGreaterThanOrEqual(CARD_WIDTH);
+  });
+
+  it('puts every card back on its own row, including one an older build let drift off it', () => {
+    const graph = { people: { a: placed('a', 360, { position: { x: 360, y: 999 } }) }, relationships: {} };
+    expect(autoLayout(graph).people.a.position).toEqual({ x: 360, y: rowY(0) });
+  });
+});
+
+describe('settleDroppedX', () => {
+  const at = (id, x) => ({ id, position: { x, y: 0 } });
+  const generation = { a: 0, b: 0, c: 0, d: 1 };
+
+  it('honours the drop exactly, fractions and all, when it overlaps nobody', () => {
+    const people = { a: at('a', 360), b: at('b', 700.25) };
+    expect(settleDroppedX(people, generation, 'b', 523.75)).toBe(523.75);
+  });
+
+  it('nudges only the dropped card to the nearest clear side of the card it landed on', () => {
+    const people = { a: at('a', 360), b: at('b', 0) };
+    expect(settleDroppedX(people, generation, 'b', 400)).toBe(360 + DROP_CLEARANCE);
+    expect(settleDroppedX(people, generation, 'b', 320)).toBe(360 - DROP_CLEARANCE);
+  });
+
+  it('skips a side that is itself blocked by a third card', () => {
+    // b dropped just right of a; a's right side is taken by c, so the
+    // nearest clear spot is a's left side.
+    const people = { a: at('a', 360), b: at('b', 0), c: at('c', 360 + DROP_CLEARANCE) };
+    expect(settleDroppedX(people, generation, 'b', 380)).toBe(360 - DROP_CLEARANCE);
+  });
+
+  it('ignores cards in other rows', () => {
+    const people = { a: at('a', 0), d: at('d', 360) };
+    expect(settleDroppedX(people, generation, 'a', 360)).toBe(360);
   });
 });

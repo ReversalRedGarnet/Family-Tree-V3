@@ -101,6 +101,8 @@ function PersonNode({
       x={x}
       y={y}
       draggable
+      // A click with a slightly shaky hand shouldn't count as a drag.
+      dragDistance={3}
       onDragStart={(e) => onDragStart?.(person.id, e)}
       onDragMove={(e) => onDragMove(person.id, e.target.x(), e.target.y())}
       onDragEnd={(e) => onDragEnd(person.id, e.target.x(), e.target.y(), e.target)}

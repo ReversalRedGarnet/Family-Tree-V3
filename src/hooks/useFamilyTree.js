@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { COLOR_THEMES, DEFAULT_GENDER, MAX_HISTORY, ORIGIN_X } from '../utils/constants';
 import { computeGenerations } from '../utils/generations';
-import { autoLayout, reflowAll, rowY } from '../utils/layout';
+import { autoLayout, reflowAll, rowY, settleDroppedX } from '../utils/layout';
 import { generateId } from '../utils/id';
 import { loadGraph, clearSavedGraph } from '../utils/storage';
 import { applyCommit } from '../utils/history';
@@ -28,6 +28,21 @@ function blankPerson(id, data = {}) {
     // unanchored card that finds the centre free stays exactly there.
     position: { x: ORIGIN_X, y: rowY(0) },
   };
+}
+
+// A hand drop: the card keeps exactly the x it was dropped at (unless that
+// overlaps someone in its row, in which case only this card is nudged clear
+// -- see settleDroppedX) and always sits on its own generation's row.
+// Returns the same object when nothing would change, so dropping a card
+// back where it already was writes nothing.
+function placeDropped(people, generation, id, x) {
+  const gen = generation[id] ?? 0;
+  const settledX = settleDroppedX(people, generation, id, x);
+  const person = people[id];
+  if (person.placed && person.placedGen === gen && person.position?.x === settledX && person.position?.y === rowY(gen)) {
+    return person;
+  }
+  return { ...person, placed: true, placedGen: gen, position: { x: settledX, y: rowY(gen) } };
 }
 
 export function useFamilyTree() {
@@ -170,14 +185,14 @@ export function useFamilyTree() {
   );
 
   const movePerson = useCallback(
-    (id, x, y) => {
+    (id, x) => {
       commit(
         (g) => {
           if (!g.people[id]) return g;
-          return {
-            ...g,
-            people: { ...g.people, [id]: { ...g.people[id], placed: true, position: { x, y } } },
-          };
+          const { generation: gens } = computeGenerations(g.people, g.relationships);
+          const moved = placeDropped(g.people, gens, id, x);
+          if (moved === g.people[id]) return g;
+          return { ...g, people: { ...g.people, [id]: moved } };
         },
         { layout: false }
       );
@@ -186,19 +201,34 @@ export function useFamilyTree() {
   );
 
   // Dragging one card out of a multi-selection moves the whole group —
-  // everyone's relative positions stay exactly as they were, and it's a
-  // single undo step, not one per person.
+  // everyone's relative positions stay as they were (each card only nudged
+  // if it lands on someone outside the group), and it's a single undo step,
+  // not one per person.
   const moveMany = useCallback(
     (positionsById) => {
       commit(
         (g) => {
-          const entries = Object.entries(positionsById).filter(([id]) => g.people[id]);
+          const entries = Object.entries(positionsById)
+            .filter(([id]) => g.people[id])
+            .sort(([, p], [, q]) => p.x - q.x);
           if (!entries.length) return g;
+          const { generation: gens } = computeGenerations(g.people, g.relationships);
+          // Every moved card is put at its new x first, so the group is
+          // checked against its own new positions, never its old ones.
           const people2 = { ...g.people };
           entries.forEach(([id, pos]) => {
-            people2[id] = { ...people2[id], placed: true, position: { x: pos.x, y: pos.y } };
+            people2[id] = { ...people2[id], position: { ...people2[id].position, x: pos.x } };
           });
-          return { ...g, people: people2 };
+          let changed = false;
+          entries.forEach(([id, pos]) => {
+            const moved = placeDropped(people2, gens, id, pos.x);
+            const before = g.people[id];
+            if (moved.position.x !== before.position?.x || moved.position.y !== before.position?.y || !before.placed) {
+              changed = true;
+            }
+            people2[id] = moved;
+          });
+          return changed ? { ...g, people: people2 } : g;
         },
         { layout: false }
       );
