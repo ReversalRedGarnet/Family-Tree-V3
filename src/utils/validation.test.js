@@ -243,3 +243,48 @@ describe('collectTreeWarnings', () => {
     expect(collectTreeWarnings(people, rels).map((w) => w.message)).toEqual(['Three would only have been 5 — worth a check.']);
   });
 });
+
+describe('validateRelationship: ended partnerships', () => {
+  const people = { a: person('a'), x: person('x'), y: person('y') };
+  const current = { r1: { kind: 'partner', a: 'a', b: 'y', status: 'together' } };
+
+  it('lets an ended partnership be recorded while a current one exists', () => {
+    expect(validateRelationship('partner', 'a', 'x', people, current, { status: 'divorced' }).ok).toBe(true);
+    expect(validateRelationship('partner', 'x', 'a', people, current, { status: 'widowed' }).ok).toBe(true);
+  });
+
+  it('lets an earlier, ended marriage to the same person sit beside the current one', () => {
+    expect(validateRelationship('partner', 'a', 'y', people, current, { status: 'divorced' }).ok).toBe(true);
+  });
+
+  it('still refuses a second current partnership, and says how to end the first', () => {
+    for (const status of [undefined, 'together', 'separated']) {
+      const result = validateRelationship('partner', 'a', 'x', people, current, { status });
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/Mark that link as divorced or widowed/);
+    }
+  });
+
+  it('still refuses a second current partnership between the same two people', () => {
+    expect(validateRelationship('partner', 'a', 'y', people, current, { status: 'together' }).ok).toBe(false);
+  });
+});
+
+describe('collectTreeWarnings: partnership years', () => {
+  it('flags a partnership that ends before it starts', () => {
+    const people = { a: person('a', { firstName: 'Ann', lastName: '' }), b: person('b', { firstName: 'Bob', lastName: '' }) };
+    const rels = { r1: { kind: 'partner', a: 'a', b: 'b', startDate: '2015', endDate: '2010' } };
+    expect(collectTreeWarnings(people, rels).map((w) => w.message)).toEqual([
+      'Their partnership with Bob ends (2010) before it starts (2015).',
+    ]);
+  });
+
+  it('says nothing when either year is missing or they are in order', () => {
+    const people = { a: person('a'), b: person('b') };
+    const rels = {
+      r1: { kind: 'partner', a: 'a', b: 'b', startDate: '2010', endDate: '2015' },
+      r2: { kind: 'partner', a: 'a', b: 'b', startDate: '', endDate: '2015' },
+    };
+    expect(collectTreeWarnings(people, rels)).toEqual([]);
+  });
+});

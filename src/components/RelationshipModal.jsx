@@ -43,6 +43,11 @@ function YearInput({ value, onChange, placeholder, disabled }) {
 // One dialog for every kind of link. Nothing here is a prerequisite for
 // anything else — a sibling link doesn't need parents, a child doesn't need
 // a couple.
+//
+// With `editing` set to an existing relationship, the same form edits that
+// link's details instead: its kind and who it connects are fixed (a
+// different kind or direction is a different link), everything else starts
+// from what's recorded.
 export default function RelationshipModal({
   open,
   personA,
@@ -50,6 +55,7 @@ export default function RelationshipModal({
   people,
   relationships = {},
   presetKind = 'partner',
+  editing = null,
   error,
   onConfirm,
   onCancel,
@@ -74,11 +80,24 @@ export default function RelationshipModal({
   // that reaches the same conclusion must not re-run the reset and wipe
   // whatever the user has already chosen.
   const suggestedSiblingType = siblingSuggestion?.type ?? null;
+  const editingId = editing?.id ?? null;
 
   useEffect(() => {
     if (!open) return;
-    setKind(presetKind);
     setSwapped(false);
+    setDeceasedId(null);
+    if (editing) {
+      setKind(editing.kind);
+      setPartnerType(editing.kind === 'partner' && editing.type ? editing.type : PARTNER_TYPES[0].id);
+      setPartnerStatus(editing.status || PARTNER_STATUS[0].id);
+      setStartDate(editing.startDate || '');
+      setEndDate(editing.endDate || '');
+      setSiblingType(editing.kind === 'sibling' && editing.type ? editing.type : SIBLING_TYPES[0].id);
+      setParentType(editing.kind === 'parent' && editing.type ? editing.type : PARENT_TYPES[0].id);
+      setLabel(editing.label || '');
+      return;
+    }
+    setKind(presetKind);
     setPartnerType(PARTNER_TYPES[0].id);
     setPartnerStatus(PARTNER_STATUS[0].id);
     setStartDate('');
@@ -88,8 +107,10 @@ export default function RelationshipModal({
     setSiblingType(suggestedSiblingType || SIBLING_TYPES[0].id);
     setParentType(PARENT_TYPES[0].id);
     setLabel('');
-    setDeceasedId(null);
-  }, [open, presetKind, suggestedSiblingType]);
+    // Keyed on the edited link's id, not the object: the form is reset once
+    // per link opened, not every time the board re-renders underneath it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, presetKind, suggestedSiblingType, editingId]);
 
   if (!open) return null;
 
@@ -129,19 +150,21 @@ export default function RelationshipModal({
   };
 
   return (
-    <Modal open={open} title="How are they related?" onClose={onCancel} size="md">
+    <Modal open={open} title={editing ? 'Edit link' : 'How are they related?'} onClose={onCancel} size="md">
       <div className="mb-4 rounded-xl bg-cyan-wash px-3.5 py-3 text-sm text-ink">
         {kind === 'parent' ? (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="font-medium">{nameOf(a)}</span>
             <span className="text-mist">is the parent of</span>
             <span className="font-medium">{nameOf(b)}</span>
-            <button
-              onClick={() => setSwapped((v) => !v)}
-              className="ml-auto rounded-lg border border-cyan/40 px-2 py-1 text-xs font-medium text-cyan-deep transition-colors hover:bg-white"
-            >
-              Swap
-            </button>
+            {!editing && (
+              <button
+                onClick={() => setSwapped((v) => !v)}
+                className="ml-auto rounded-lg border border-cyan/40 px-2 py-1 text-xs font-medium text-cyan-deep transition-colors hover:bg-white"
+              >
+                Swap
+              </button>
+            )}
           </div>
         ) : (
           <span>
@@ -152,7 +175,7 @@ export default function RelationshipModal({
         )}
       </div>
 
-      <div className="space-y-2">
+      <div className={editing ? 'hidden' : 'space-y-2'}>
         {RELATIONSHIP_KINDS.map((option) => (
           <label
             key={option.id}
@@ -349,7 +372,7 @@ export default function RelationshipModal({
           title={blocked ? 'Choose which of them has passed away first' : undefined}
           className="flex-1 rounded-xl bg-cyan px-4 py-2.5 font-medium text-white transition-colors hover:bg-cyan-deep disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Link them
+          {editing ? 'Save changes' : 'Link them'}
         </button>
       </div>
     </Modal>

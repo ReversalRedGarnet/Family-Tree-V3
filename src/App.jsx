@@ -33,7 +33,7 @@ import { MOBILE_BREAKPOINT, exportThemeFor } from './utils/constants';
 
 const CLOSED_MENU = { open: false, x: 0, y: 0, items: [] };
 const CLOSED_PERSON = { open: false, mode: 'add', editingId: null, pending: null };
-const CLOSED_LINK = { open: false, a: null, b: null, preset: 'partner', error: null };
+const CLOSED_LINK = { open: false, a: null, b: null, preset: 'partner', error: null, editingId: null };
 
 function nextPaint() {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -412,9 +412,49 @@ export default function App() {
     [tree, pushToast, nameOf]
   );
 
+  // Saving the link dialog in edit mode: only the link's own details change.
+  // Moving a partnership back to current (together/separated) is checked
+  // like a new one would be -- against every OTHER link on the board.
+  const handleLinkEdit = useCallback(
+    (relId, details, deceasedId) => {
+      const rel = relationships[relId];
+      if (!rel) {
+        setLinkModal(CLOSED_LINK);
+        return;
+      }
+      const others = { ...relationships };
+      delete others[relId];
+      const check = validateRelationship(rel.kind, rel.a, rel.b, people, others, details);
+      if (!check.ok) {
+        setLinkModal((m) => ({ ...m, error: check.error }));
+        return;
+      }
+      tree.updateRelationship(relId, details, deceasedId);
+      setLinkModal(CLOSED_LINK);
+      pushToast('Link updated.', 'success', 2200);
+      if (deceasedId && people[deceasedId]?.living !== false) {
+        pushToast(`${nameOf(deceasedId)} is now marked as no longer living.`, 'info', 4000);
+      }
+    },
+    [people, relationships, tree, pushToast, nameOf]
+  );
+
+  const openEditLink = useCallback(
+    (relId) => {
+      const rel = relationships[relId];
+      if (!rel) return;
+      setLinkModal({ open: true, a: rel.a, b: rel.b, preset: rel.kind, error: null, editingId: relId });
+    },
+    [relationships]
+  );
+
   const handleLinkConfirm = useCallback(
     (kind, aId, bId, details, deceasedId) => {
-      const check = validateRelationship(kind, aId, bId, people, relationships);
+      if (linkModal.editingId) {
+        handleLinkEdit(linkModal.editingId, details, deceasedId);
+        return;
+      }
+      const check = validateRelationship(kind, aId, bId, people, relationships, details);
       if (!check.ok) {
         setLinkModal((m) => ({ ...m, error: check.error }));
         return;
@@ -482,7 +522,7 @@ export default function App() {
         if (candidates.length) askAboutSharedChildren(candidates, []);
       }
     },
-    [people, relationships, tree, pushToast, nameOf, askAboutSharedChildren]
+    [people, relationships, tree, pushToast, nameOf, askAboutSharedChildren, linkModal.editingId, handleLinkEdit]
   );
 
   // Dropping a card onto a parent line or a couple's line adopts the person
@@ -550,6 +590,7 @@ export default function App() {
         x: e.evt.clientX,
         y: e.evt.clientY,
         items: [
+          { label: 'Edit link…', onSelect: () => openEditLink(relId) },
           {
             label: 'Remove this link',
             danger: true,
@@ -562,7 +603,7 @@ export default function App() {
         ],
       });
     },
-    [relationships, tree, pushToast, nameOf]
+    [relationships, tree, pushToast, nameOf, openEditLink]
   );
 
   // ---------- Context menu ----------
@@ -841,6 +882,7 @@ export default function App() {
         people={people}
         relationships={relationships}
         presetKind={linkModal.preset}
+        editing={linkModal.editingId ? relationships[linkModal.editingId] : null}
         error={linkModal.error}
         onConfirm={handleLinkConfirm}
         onCancel={() => setLinkModal(CLOSED_LINK)}

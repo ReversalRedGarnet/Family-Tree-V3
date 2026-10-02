@@ -1,5 +1,5 @@
 import { wouldCreateCycle, activePartnersOf, generationOffset, isBirthLink } from './generations';
-import { getPersonDateWarnings, getParentChildAgeWarnings } from './dates';
+import { getPersonDateWarnings, getParentChildAgeWarnings, parseYear } from './dates';
 import { formatName } from './names';
 
 const unordered = (rel, x, y) =>
@@ -10,26 +10,34 @@ const displayName = (people, id) => {
   return p ? formatName(p) : 'Someone';
 };
 
+// A partnership that has ended. Together, separated and no status at all are
+// all still current.
+export const isEndedPartnership = (status) => status === 'divorced' || status === 'widowed';
+
 // The only blocking rules left are the ones that would make the tree
 // self-contradictory. Everything else — no parents yet, no partner, a child
 // with a single parent — is allowed, because none of that is an error.
-export function validateRelationship(kind, aId, bId, people, relationships) {
+//
+// `details` is the new link's own fields; for a partner link its `status`
+// decides whether the exclusivity rules below apply at all.
+export function validateRelationship(kind, aId, bId, people, relationships, details = {}) {
   if (!aId || !bId) return { ok: false, error: 'Pick two people first.' };
   if (aId === bId) return { ok: false, error: "You can't link someone to themselves." };
   if (!people[aId] || !people[bId]) {
     return { ok: false, error: 'One of those people is no longer on the board.' };
   }
 
+  // An ended partnership is history, not a current claim on anyone: it can
+  // be recorded alongside a current one, with someone else or with the same
+  // person (married, divorced, remarried).
+  const newPartnershipIsCurrent = kind === 'partner' && !isEndedPartnership(details.status);
+
   const existing = Object.values(relationships).find((rel) => {
     if (rel.kind !== kind) return false;
     if (kind === 'parent') return rel.a === aId && rel.b === bId;
     if (kind === 'partner') {
-      // A concluded partnership doesn't block a fresh one between the same
-      // two people — that's a remarriage, a new chapter in their history,
-      // not a duplicate of the old one. Only an unconcluded link (together
-      // or separated — nothing has actually ended yet) counts as the
-      // duplicate.
-      return unordered(rel, aId, bId) && rel.status !== 'divorced' && rel.status !== 'widowed';
+      // Only two CURRENT partnerships between the same pair are duplicates.
+      return newPartnershipIsCurrent && unordered(rel, aId, bId) && !isEndedPartnership(rel.status);
     }
     return unordered(rel, aId, bId);
   });
@@ -71,21 +79,16 @@ export function validateRelationship(kind, aId, bId, people, relationships) {
     // one catches the SAME pair twice, this one catches a person already
     // spoken for by a DIFFERENT pair. Concluded partnerships (divorced,
     // widowed) don't count here either, for the same remarriage reason
-    // they don't count as a duplicate above.
-    const aTaken = activePartnersOf(aId, relationships).filter((id) => id !== bId);
-    const bTaken = activePartnersOf(bId, relationships).filter((id) => id !== aId);
-    if (aTaken.length) {
-      return {
-        ok: false,
-        error: `${displayName(people, aId)} is already partnered with ${displayName(people, aTaken[0])} — that link needs to end first.`,
-      };
-    }
-    if (bTaken.length) {
-      return {
-        ok: false,
-        error: `${displayName(people, bId)} is already partnered with ${displayName(people, bTaken[0])} — that link needs to end first.`,
-      };
-    }
+    // they don't count as a duplicate above. Only a CURRENT new partnership
+    // is held to this; recording an ended one never is.
+    const aTaken = newPartnershipIsCurrent ? activePartnersOf(aId, relationships).filter((id) => id !== bId) : [];
+    const bTaken = newPartnershipIsCurrent ? activePartnersOf(bId, relationships).filter((id) => id !== aId) : [];
+    const taken = (id, otherId) => ({
+      ok: false,
+      error: `${displayName(people, id)} is already partnered with ${displayName(people, otherId)}. Mark that link as divorced or widowed first (click it, then Edit link…).`,
+    });
+    if (aTaken.length) return taken(aId, aTaken[0]);
+    if (bTaken.length) return taken(bId, bTaken[0]);
   }
 
   if (kind === 'sibling') {
@@ -195,6 +198,15 @@ export function collectTreeWarnings(people, relationships) {
       .map((rel) => people[rel.a])
       .filter(Boolean);
     getParentChildAgeWarnings(person, ...birthParents).forEach((message) => note(person, message));
+  });
+
+  Object.values(relationships).forEach((rel) => {
+    if (rel.kind !== 'partner' || !people[rel.a] || !people[rel.b]) return;
+    const start = parseYear(rel.startDate);
+    const end = parseYear(rel.endDate);
+    if (start && end && end < start) {
+      note(people[rel.a], `Their partnership with ${formatName(people[rel.b])} ends (${end}) before it starts (${start}).`);
+    }
   });
 
   return warnings;

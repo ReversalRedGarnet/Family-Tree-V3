@@ -301,6 +301,34 @@ export function useFamilyTree() {
     [commit]
   );
 
+  // Edits an existing link's own details -- a partnership's type, status or
+  // years, a parent or sibling link's type, an "other" link's label. Who it
+  // connects and what kind of link it is never change here (that's a
+  // different link, so delete and re-add). Marking someone deceased for a
+  // "widowed" status lands in the same commit, as addPartnerWithLoss does.
+  // Nothing actually changing costs no undo step.
+  const updateRelationship = useCallback(
+    (id, patch, deceasedId = null) => {
+      commit(
+        (g) => {
+          const rel = g.relationships[id];
+          if (!rel) return g;
+          const next = { ...rel, ...patch, id: rel.id, kind: rel.kind, a: rel.a, b: rel.b };
+          const relChanged = Object.keys(next).some((key) => next[key] !== rel[key]);
+          const markDeceased = Boolean(deceasedId && g.people[deceasedId] && g.people[deceasedId].living !== false);
+          if (!relChanged && !markDeceased) return g;
+          return {
+            people: markDeceased ? { ...g.people, [deceasedId]: { ...g.people[deceasedId], living: false } } : g.people,
+            relationships: relChanged ? { ...g.relationships, [id]: next } : g.relationships,
+          };
+        },
+        // Nothing here changes anyone's generation, so there's nothing to lay out.
+        { layout: false }
+      );
+    },
+    [commit]
+  );
+
   // ---------- Layout / history ----------
 
   // Swaps in a whole different graph in one step — the "load from Drive"
@@ -416,6 +444,7 @@ export function useFamilyTree() {
     addRelationshipBatch,
     addParentLinks,
     addPartnerWithLoss,
+    updateRelationship,
     deleteRelationship,
     tidyRows,
     resetAll,

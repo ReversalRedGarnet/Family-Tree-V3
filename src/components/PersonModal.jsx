@@ -73,9 +73,9 @@ const LIVING_OPTIONS = [
 function labelFor(rel, otherName) {
   if (rel.kind === 'partner') {
     const type = PARTNER_TYPES.find((t) => t.id === rel.type)?.label || 'Partner';
-    return rel.status && rel.status !== 'together'
-      ? `${type} (${rel.status}) · ${otherName}`
-      : `${type} · ${otherName}`;
+    const status = rel.status && rel.status !== 'together' ? ` (${rel.status})` : '';
+    const years = rel.startDate || rel.endDate ? ` ${rel.startDate || '?'}–${rel.endDate || ''}` : '';
+    return `${type}${status}${years} · ${otherName}`;
   }
   if (rel.kind === 'parent') {
     return `${PARENT_TYPES.find((t) => t.id === rel.type)?.label || 'Parent'} · ${otherName}`;

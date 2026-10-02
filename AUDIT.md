@@ -540,3 +540,16 @@ Performance (headless Chromium, 1280×800, preview build, generated multi-genera
 |---|---|---|---|
 | 150 / 236 | 437 ms | 196 ms | 38 ms |
 | 500 / 812 | 1,563 ms | 456 ms | 106 ms |
+
+---
+
+## Found during fixes
+
+New issues noticed while implementing Phases 1–6. Logged here, not fixed.
+
+| ID | Sev | Where | Issue | Suggested fix |
+|---|---|---|---|---|
+| F1 | Medium | `src/components/Modal.jsx:38-41` (refines M2) | With two dialogs stacked, Escape closes the dialog **underneath** and leaves the top one open. Reproduced: the duplicate-person prompt over the Add form (the form and its typed values are lost, the prompt stays). An "Edit link" dialog opened from the person form behaves the same way. The audit's M2 count of "2 → 1 dialogs" was this, not a correct close. | Fix with M2 in Phase 7: only the topmost dialog handles Escape/Tab. |
+| F2 | Low | `src/components/PersonModal.jsx` link list | Phase 5 adds "Edit link…" on a clicked line only. An Edit button in the person form's link list was built and then taken out, because of F1 (Escape there throws away unsaved person edits). Parent links aren't clickable on the board, so their type can't be edited yet. | Re-add the person-form Edit button once F1/M2 is fixed. When it's back, note that a "widowed" edit that marks *the person being edited* as deceased resets the open form (PersonModal re-initialises when `initialPerson` changes). |
+| F3 | Low | `src/utils/generations.js:133-142` vs `src/utils/validation.js` comments | `activePartnersOf` treats a **separated** partnership as not current, so it doesn't block a new current partnership. The validation comments and README say separated counts as "unconcluded" and should block. The code and the docs disagree; decide which is intended. | Either count `separated` in `activePartnersOf` for the exclusivity check, or correct the comments and README (Phase 13). |
+| F4 | Low | `src/utils/connectors.js:93-119` | A partner line between two cards that aren't neighbours in a row is drawn straight through the cards in between, on top of their own partner lines. Clicking it can open the wrong link (seen: Ann–Xavi drawn through Yan, over Ann–Yan). The edit dialog names both people, so the wrong pick is visible, not silent. | Route non-adjacent partner lines as an arch, as sibling lines are drawn, or offset them vertically. |
