@@ -3,6 +3,7 @@
 // refresh or an accidentally closed tab, nothing more. Export is still the
 // only way to get a copy that outlives this browser's storage.
 import { COLOR_THEMES, DEFAULT_GENDER, ORIGIN_X, TOP_MARGIN } from './constants';
+import { placeUnpositioned } from './layout';
 
 const STORAGE_KEY = 'family-tree/graph/v1';
 const BACKUP_PREFIX = `${STORAGE_KEY}/backup-`;
@@ -49,7 +50,10 @@ function sanitizePerson(id, raw) {
   const x = raw.position?.x;
   const y = raw.position?.y;
   const hasPosition = Number.isFinite(x) && Number.isFinite(y);
+  // A stand-in only: sanitizeGraph gives everyone without a position a
+  // proper slot of their own once the whole graph is known.
   person.position = hasPosition ? { x, y } : { x: ORIGIN_X, y: TOP_MARGIN };
+  person.hasSavedPosition = hasPosition;
   person.placed = hasPosition && raw.placed === true;
   person.placedGen = Number.isFinite(raw.placedGen) ? raw.placedGen : 0;
   return person;
@@ -88,7 +92,15 @@ export function sanitizeGraph(raw) {
     }
   });
 
-  return { people, relationships, droppedCount };
+  // Anyone without a saved position would otherwise sit on the stand-in
+  // spot above, all stacked on top of each other.
+  const unpositioned = Object.keys(people).filter((id) => !people[id].hasSavedPosition);
+  Object.values(people).forEach((person) => {
+    delete person.hasSavedPosition;
+  });
+  const placed = placeUnpositioned({ people, relationships }, unpositioned);
+
+  return { people: placed.people, relationships, droppedCount };
 }
 
 // ---- Keeping an unreadable save aside ----

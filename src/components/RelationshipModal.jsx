@@ -33,7 +33,7 @@ function Label({ children, hint, htmlFor }) {
 
 // Years only. Strips anything that isn't a digit, same rule as the year
 // fields on the person form.
-function YearInput({ value, onChange, placeholder, disabled }) {
+function YearInput({ value, onChange, placeholder, disabled, describedBy }) {
   return (
     <input
       type="text"
@@ -41,6 +41,7 @@ function YearInput({ value, onChange, placeholder, disabled }) {
       maxLength={4}
       value={value || ''}
       placeholder={placeholder}
+      aria-describedby={describedBy}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 4))}
       className={`${field} disabled:bg-paper disabled:text-mist`}
@@ -276,7 +277,12 @@ export default function RelationshipModal({
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
                 <Label>Year started</Label>
-                <YearInput value={startDate} onChange={setStartDate} placeholder="1998" />
+                <YearInput
+                  value={startDate}
+                  onChange={setStartDate}
+                  placeholder="1998"
+                  describedBy={`${fieldId}-years-hint`}
+                />
               </label>
               <label className="block">
                 <Label>Year ended</Label>
@@ -285,9 +291,13 @@ export default function RelationshipModal({
                   onChange={setEndDate}
                   placeholder="2015"
                   disabled={together}
+                  describedBy={`${fieldId}-years-hint`}
                 />
               </label>
             </div>
+            <p id={`${fieldId}-years-hint`} className="text-xs leading-snug text-mist">
+              Years are digits only, like 1998. Leave one blank if you're not sure.
+            </p>
           </>
         )}
 

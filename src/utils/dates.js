@@ -33,7 +33,9 @@ export function formatLifespan(person) {
   return birth ? `b. ${birth}` : '';
 }
 
-export function getPersonDateWarnings(person) {
+// `currentYear` is only a parameter so tests don't depend on the date they
+// run on.
+export function getPersonDateWarnings(person, currentYear = new Date().getFullYear()) {
   const warnings = [];
   if (!person) return warnings;
 
@@ -47,6 +49,13 @@ export function getPersonDateWarnings(person) {
   const birth = parseYear(person.birthYear);
   const death = parseYear(person.deathYear);
 
+  // A year that hasn't happened yet is almost always a typo (2095 for 1995).
+  if (birth && birth > currentYear) {
+    warnings.push(`The year of birth (${birth}) is in the future.`);
+  }
+  if (death && death > currentYear) {
+    warnings.push(`The year of death (${death}) is in the future.`);
+  }
   if (birth && death && death < birth) {
     warnings.push('The year of death comes before the year of birth.');
   }

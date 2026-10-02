@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadGraph, saveGraph, sanitizeGraph, moveSaveAside, readRawSave, SAVE_VERSION } from './storage';
-import { ORIGIN_X, TOP_MARGIN } from './constants';
+import { CARD_WIDTH, ORIGIN_X, SLOT_STEP, TOP_MARGIN } from './constants';
+import { rowY } from './layout';
 
 const KEY = 'family-tree/graph/v1';
 
@@ -98,6 +99,67 @@ describe('sanitizeGraph', () => {
   it('treats a non-object input as an empty graph', () => {
     expect(sanitizeGraph(null)).toEqual({ people: {}, relationships: {}, droppedCount: 0 });
     expect(sanitizeGraph('x')).toEqual({ people: {}, relationships: {}, droppedCount: 0 });
+  });
+});
+
+describe('people saved without a position (F5)', () => {
+  const xsOf = (people) => Object.values(people).map((p) => p.position.x);
+  const noTwoOverlap = (xs) =>
+    xs.every((x, i) => xs.every((other, j) => i === j || Math.abs(x - other) >= CARD_WIDTH));
+
+  it('never stacks them on one spot', () => {
+    const raw = { people: { a: { firstName: 'A' }, b: { firstName: 'B' }, c: { firstName: 'C' }, d: { firstName: 'D' } } };
+    const { people } = sanitizeGraph(raw);
+    expect(noTwoOverlap(xsOf(people))).toBe(true);
+    Object.values(people).forEach((p) => expect(p.position.y).toBe(rowY(0)));
+  });
+
+  it('gives the same file the same layout every time, whatever the key order', () => {
+    const one = sanitizeGraph({ people: { a: { firstName: 'A' }, b: { firstName: 'B' }, c: { firstName: 'C' } } });
+    const two = sanitizeGraph({ people: { c: { firstName: 'C' }, a: { firstName: 'A' }, b: { firstName: 'B' } } });
+    for (const id of ['a', 'b', 'c']) expect(two.people[id].position).toEqual(one.people[id].position);
+  });
+
+  it('puts them on their generation row, near relatives who have a position, and moves nobody else', () => {
+    const raw = {
+      people: {
+        mum: { firstName: 'Mum', position: { x: 360, y: rowY(0) }, placed: true },
+        dad: { firstName: 'Dad', position: { x: 562, y: rowY(0) }, placed: true },
+        kid: { firstName: 'Kid' },
+        kid2: { firstName: 'Kid2' },
+      },
+      relationships: {
+        r1: { kind: 'partner', a: 'mum', b: 'dad' },
+        p1: { kind: 'parent', a: 'mum', b: 'kid' },
+        p2: { kind: 'parent', a: 'dad', b: 'kid' },
+        p3: { kind: 'parent', a: 'mum', b: 'kid2' },
+        p4: { kind: 'parent', a: 'dad', b: 'kid2' },
+      },
+    };
+    const { people } = sanitizeGraph(raw);
+    expect(people.mum.position).toEqual({ x: 360, y: rowY(0) });
+    expect(people.dad.position).toEqual({ x: 562, y: rowY(0) });
+    expect(people.mum.placed).toBe(true);
+    for (const id of ['kid', 'kid2']) {
+      expect(people[id].position.y).toBe(rowY(1));
+      expect(Math.abs(people[id].position.x - 461)).toBeLessThan(SLOT_STEP * 2);
+      expect(people[id].placed).toBe(false);
+    }
+    expect(noTwoOverlap([people.kid.position.x, people.kid2.position.x])).toBe(true);
+  });
+
+  it('places a missing person clear of a positioned one on the same row', () => {
+    const { people } = sanitizeGraph({
+      people: { a: { firstName: 'A', position: { x: ORIGIN_X, y: TOP_MARGIN } }, b: { firstName: 'B' } },
+    });
+    expect(Math.abs(people.b.position.x - people.a.position.x)).toBeGreaterThanOrEqual(CARD_WIDTH);
+  });
+
+  it('applies to a legacy save loaded from this browser', () => {
+    storage.setItem(KEY, JSON.stringify({ version: SAVE_VERSION, people: { a: { firstName: 'A' }, b: { firstName: 'B' } }, relationships: {} }));
+    const loaded = loadGraph();
+    expect(loaded.status).toBe('ok');
+    expect(noTwoOverlap(xsOf(loaded.people))).toBe(true);
   });
 });
 
