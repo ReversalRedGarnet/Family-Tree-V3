@@ -6,6 +6,7 @@ import RelationshipModal from './components/RelationshipModal';
 import ExportModal from './components/ExportModal';
 import ContextMenu from './components/ContextMenu';
 import ConfirmDialog from './components/ConfirmDialog';
+import { openModalCount } from './components/Modal';
 import ToastStack from './components/ToastStack';
 import Tooltip from './components/Tooltip';
 import { useFamilyTree } from './hooks/useFamilyTree';
@@ -753,8 +754,11 @@ export default function App() {
         tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable;
 
       if (e.key === 'Escape') {
+        // With any dialog open, Escape belongs to the dialog on top, which
+        // closes itself (Modal.jsx). Acting here too used to close the link
+        // dialog even when another dialog sat above it, losing its choices.
+        if (openModalCount() > 0) return;
         closeMenu();
-        setLinkModal(CLOSED_LINK);
         if (!typing) tree.clearSelection();
         return;
       }
