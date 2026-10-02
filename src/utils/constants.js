@@ -186,6 +186,10 @@ export const CARD_BAND_HEIGHT = 20; // the memorial band along a deceased card's
 export const BOARD_PADDING = 140;
 // One press of the zoom buttons zooms in or out by this factor.
 export const ZOOM_BUTTON_STEP = 1.2;
+// How far an arrow key pans the board, in screen pixels (with Shift: the
+// larger step).
+export const ARROW_PAN_STEP = 60;
+export const ARROW_PAN_STEP_LARGE = 240;
 // How far the pointer moves from mousedown on the empty board before it's
 // a marquee rather than a click.
 export const MARQUEE_THRESHOLD = 4;

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  arrowKeyAction,
+  arrowPanDelta,
   boardKeyCommand,
   describePerson,
   neighbour,
@@ -7,6 +9,7 @@ import {
   revealView,
   rowsOf,
   spacePansBoard,
+  spaceTypesText,
   startingPerson,
 } from './boardNav';
 
@@ -145,5 +148,35 @@ describe('hold Space to pan (F10)', () => {
     expect(spacePansBoard({ name: 'button' }, board, body)).toBe(false);
     expect(spacePansBoard({ name: 'zoom button inside the board' }, board, body)).toBe(false);
     expect(spacePansBoard({ name: 'button' }, null, body)).toBe(false);
+  });
+});
+
+describe('Space in a text field, and the arrow-key rule', () => {
+  it('Space typed into a text field or a select is never a pan; on buttons and checkboxes it can be', () => {
+    expect(spaceTypesText({ tagName: 'INPUT', type: 'text' })).toBe(true);
+    expect(spaceTypesText({ tagName: 'INPUT', type: 'search' })).toBe(true);
+    expect(spaceTypesText({ tagName: 'TEXTAREA' })).toBe(true);
+    expect(spaceTypesText({ tagName: 'SELECT' })).toBe(true);
+    expect(spaceTypesText({ tagName: 'DIV', isContentEditable: true })).toBe(true);
+    expect(spaceTypesText({ tagName: 'INPUT', type: 'checkbox' })).toBe(false);
+    expect(spaceTypesText({ tagName: 'BUTTON' })).toBe(false);
+    expect(spaceTypesText(null)).toBe(false);
+  });
+
+  it('arrows move between people while someone is in play, and pan otherwise', () => {
+    expect(arrowKeyAction('board', true)).toBe('people');
+    expect(arrowKeyAction('nothing', true)).toBe('people');
+    expect(arrowKeyAction('board', false)).toBe('pan');
+    expect(arrowKeyAction('nothing', false)).toBe('pan');
+    expect(arrowKeyAction('other', false)).toBeNull();
+    expect(arrowKeyAction('other', true)).toBeNull();
+  });
+
+  it('an arrow pans the opposite way to the key, like scrolling', () => {
+    expect(arrowPanDelta('ArrowRight', 60)).toEqual({ dx: -60, dy: 0 });
+    expect(arrowPanDelta('ArrowLeft', 60)).toEqual({ dx: 60, dy: 0 });
+    expect(arrowPanDelta('ArrowDown', 240)).toEqual({ dx: 0, dy: -240 });
+    expect(arrowPanDelta('ArrowUp', 240)).toEqual({ dx: 0, dy: 240 });
+    expect(arrowPanDelta('Home', 60)).toBeNull();
   });
 });

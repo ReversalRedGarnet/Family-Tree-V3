@@ -89,12 +89,47 @@ export function boardKeyCommand(e) {
   return null;
 }
 
-// Whether holding Space should mean "drag to pan". Only while the board
-// itself has focus, or nothing does (Space held over the board before
-// clicking it). Anywhere else Space belongs to the focused control: it
-// presses a button, ticks a checkbox, follows a link.
+// Whether Space is the board's own key: the board itself has focus, or
+// nothing does. Then a Space press does nothing but get ready to pan. On
+// any other control Space still does that control's job (presses a button,
+// ticks a checkbox), unless a Space+drag pan happens before it's released.
 export function spacePansBoard(active, board, body) {
   return !active || active === body || (Boolean(board) && active === board);
+}
+
+const NOT_TEXT_INPUTS = new Set(['button', 'checkbox', 'radio', 'submit', 'reset', 'range', 'color', 'file', 'image']);
+
+// Space typed into a text field (or opening a <select>) is never a pan.
+export function spaceTypesText(active) {
+  if (!active) return false;
+  if (active.isContentEditable) return true;
+  if (active.tagName === 'TEXTAREA' || active.tagName === 'SELECT') return true;
+  return active.tagName === 'INPUT' && !NOT_TEXT_INPUTS.has(String(active.type).toLowerCase());
+}
+
+// What an arrow key does. With focus on the board, or on nothing, it moves
+// between people while a person is in play (someone is selected, or the
+// keyboard ring is on someone), and otherwise pans the board. With focus on
+// any other control the key is that control's.
+export function arrowKeyAction(focus, personInPlay) {
+  if (focus !== 'board' && focus !== 'nothing') return null;
+  return personInPlay ? 'people' : 'pan';
+}
+
+const PAN_DIRECTIONS = {
+  ArrowLeft: [1, 0],
+  ArrowRight: [-1, 0],
+  ArrowUp: [0, 1],
+  ArrowDown: [0, -1],
+};
+
+// How far the view moves for an arrow key: the board moves the opposite
+// way to the key, so ArrowRight brings in what's to the right, like
+// scrolling. Null for any other key.
+export function arrowPanDelta(key, step) {
+  const dir = PAN_DIRECTIONS[key];
+  if (!dir) return null;
+  return { dx: dir[0] * step, dy: dir[1] * step };
 }
 
 // What the live region reads out for the current person.

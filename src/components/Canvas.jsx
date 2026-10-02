@@ -21,19 +21,25 @@ import {
   BOARD_PADDING,
   ZOOM_BUTTON_STEP,
   MARQUEE_THRESHOLD,
+  ARROW_PAN_STEP,
+  ARROW_PAN_STEP_LARGE,
   shapeForGender,
 } from '../utils/constants';
 import { buildConnectors, findConnectorAt } from '../utils/connectors';
 import { formatName } from '../utils/names';
 import { clampScale, fitScale, minScaleFor, wheelAction } from '../utils/viewport';
 import {
+  arrowKeyAction,
+  arrowPanDelta,
   boardKeyCommand,
   describePerson,
   nextCurrent,
   revealView,
   spacePansBoard,
+  spaceTypesText,
   startingPerson,
 } from '../utils/boardNav';
+import { openModalCount } from './Modal';
 import { createLongPress } from '../utils/longPress';
 
 // A touch-originated drag needs the wider, touch-tuned tolerances; a
@@ -176,6 +182,8 @@ const Canvas = forwardRef(function Canvas(
   // exactly the anchor's own delta and committed as one move.
   const groupDragRef = useRef(null);
   const spaceRef = useRef(false);
+  // A Space+drag pan happened while Space was held (see the Space listener).
+  const pannedWhileSpaceRef = useRef(false);
 
   const [size, setSize] = useState({ width: 1000, height: 700 });
   const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
@@ -202,18 +210,27 @@ const Canvas = forwardRef(function Canvas(
   // Holding Space pans by dragging with the primary mouse button — the
   // usual escape hatch (Figma, Miro, Photoshop) now that plain left-drag on
   // empty canvas draws a marquee instead of panning the board.
+  //
+  // Space counts as held whatever has focus (except a text field), so it
+  // still pans right after a sidebar button was clicked. What it doesn't do
+  // is take over a focused button's own Space (AUDIT F10): the press is left
+  // alone, and only if a pan actually happens before Space is released is
+  // that release swallowed, so the button isn't pressed as well.
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.code !== 'Space' || e.repeat) return;
-      // Only when Space isn't the focused control's own key (AUDIT F10).
-      if (!spacePansBoard(document.activeElement, containerRef.current, document.body)) return;
-      e.preventDefault();
+      const active = document.activeElement;
+      if (spaceTypesText(active)) return;
+      if (spacePansBoard(active, containerRef.current, document.body)) e.preventDefault();
       spaceRef.current = true;
+      pannedWhileSpaceRef.current = false;
       setSpaceHeld(true);
     };
     const onKeyUp = (e) => {
       if (e.code !== 'Space') return;
+      if (spaceRef.current && pannedWhileSpaceRef.current) e.preventDefault();
       spaceRef.current = false;
+      pannedWhileSpaceRef.current = false;
       setSpaceHeld(false);
     };
     window.addEventListener('keydown', onKeyDown);
@@ -273,6 +290,10 @@ const Canvas = forwardRef(function Canvas(
   // Read through a ref so zoomAround keeps one identity across renders.
   const minScaleRef = useRef(minScale);
   minScaleRef.current = minScale;
+
+  const panBy = useCallback((dx, dy) => {
+    setView((v) => ({ ...v, x: v.x + dx, y: v.y + dy }));
+  }, []);
 
   const zoomAround = useCallback((factor, cx, cy) => {
     setView((v) => {
@@ -577,6 +598,7 @@ const Canvas = forwardRef(function Canvas(
 
       if (e.evt.button === 1 || (e.evt.button === 0 && spaceRef.current)) {
         e.evt.preventDefault();
+        if (e.evt.button === 0) pannedWhileSpaceRef.current = true;
         panRef.current = {
           startClientX: e.evt.clientX,
           startClientY: e.evt.clientY,
@@ -930,11 +952,41 @@ const Canvas = forwardRef(function Canvas(
     [people, size, reveal, onCanvasContextMenu, onPersonContextMenu]
   );
 
+  // A person is "in play" while someone is selected or the keyboard ring is
+  // on someone. Then the arrow keys move between people; otherwise they pan.
+  const personInPlay =
+    selectedIds.some((id) => people[id]) || (keyboardActive && Boolean(liveCurrentId));
+
+  // Pans for an arrow key when nobody is in play. True if it did.
+  const panForArrow = useCallback(
+    (e) => {
+      const delta = arrowPanDelta(e.key, e.shiftKey ? ARROW_PAN_STEP_LARGE : ARROW_PAN_STEP);
+      if (!delta) return false;
+      e.preventDefault();
+      panBy(delta.dx, delta.dy);
+      return true;
+    },
+    [panBy]
+  );
+
   const handleBoardKeyDown = useCallback(
     (e) => {
       if (e.target !== e.currentTarget) return;
+      // Escape hides the ring as well as clearing the selection (App), so
+      // the arrow keys go back to panning.
+      if (e.key === 'Escape') {
+        setKeyboardActive(false);
+        return;
+      }
       const command = boardKeyCommand(e);
       if (!command) return;
+      if (
+        command.type === 'move' &&
+        arrowKeyAction('board', personInPlay) === 'pan' &&
+        panForArrow(e)
+      ) {
+        return;
+      }
       // Space after a mouse click is still hold-Space-to-pan; it only
       // selects once the keyboard is in use.
       if (command.type === 'toggle' && (!keyboardActive || e.repeat)) return;
@@ -962,8 +1014,57 @@ const Canvas = forwardRef(function Canvas(
       if (command.type === 'edit') onEditPerson(id);
       else onSelect(id, true);
     },
-    [keyboardActive, people, liveCurrentId, selectedIds, reveal, onSelect, onEditPerson, openMenuFromKeyboard]
+    [
+      keyboardActive,
+      people,
+      liveCurrentId,
+      selectedIds,
+      personInPlay,
+      panForArrow,
+      reveal,
+      onSelect,
+      onEditPerson,
+      openMenuFromKeyboard,
+    ]
   );
+
+  // Arrow keys with nothing focused at all (a fresh page, or after
+  // clicking somewhere that takes no focus): the same rule as on the board.
+  // With someone in play, focus moves onto the board first, so the keys
+  // that follow land there too.
+  const arrowsWithNothingFocusedRef = useRef(null);
+  arrowsWithNothingFocusedRef.current = (e) => {
+    if (arrowKeyAction('nothing', personInPlay) === 'pan') {
+      panForArrow(e);
+      return;
+    }
+    const board = containerRef.current;
+    if (!board) return;
+    e.preventDefault();
+    board.focus();
+    handleBoardKeyDown({
+      key: e.key,
+      shiftKey: e.shiftKey,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      repeat: e.repeat,
+      target: board,
+      currentTarget: board,
+      preventDefault: () => {},
+    });
+  };
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (!arrowPanDelta(e.key, 1) || e.altKey || e.ctrlKey || e.metaKey) return;
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      if (openModalCount() > 0) return;
+      arrowsWithNothingFocusedRef.current?.(e);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   // Tabbing in shows the ring; a click that focuses the board doesn't.
   // :focus-visible is the browser's own call on which of the two it was,
