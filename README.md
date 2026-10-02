@@ -135,6 +135,7 @@ src/
     Legend.jsx              The line key
     PersonModal.jsx         Add/edit a person; their links (Edit, Unlink); Delete
     RelationshipModal.jsx   Create or edit one link
+    FormFields.jsx          Field style, label and year input shared by both dialogs
     ExportModal.jsx         Name, Look, PNG/PDF
     ContextMenu.jsx         Right-click menu (person, line, or empty board)
     ConfirmDialog.jsx       Yes/no question
@@ -149,6 +150,8 @@ src/
     layout.js               Card placement, collision handling, Tidy the layout
     connectors.js           Line geometry, shared by drawing and drop detection
     viewport.js             Zoom limits and wheel/trackpad handling
+    boardNav.js             Moving around the board with the keyboard
+    longPress.js            Long-press detection for touch screens
     history.js              Undo/redo stack (50 steps)
     storage.js              localStorage save, load checks, backups of unreadable saves
     dates.js                Year parsing and date warnings
@@ -261,8 +264,8 @@ several.
 ### Keyboard and dialogs
 
 - **Escape** closes only the dialog on top. With a question open over a form,
-  the form and what you've typed in it stay. Escape also closes a menu and
-  clears the selection.
+  the form and what you've typed in it stay. With a menu open, Escape closes
+  just the menu; with nothing open, it clears the selection.
 - **Tab** stays inside the top dialog.
 - When a dialog closes, focus goes back to whatever opened it.
 - Fields that have an (i) hint are labelled for screen readers, with the hint
@@ -271,10 +274,32 @@ several.
 - If a second yes/no question arrives while one is open (for example, a Drive
   conflict during a delete), it waits its turn instead of replacing the first.
 
-Not done yet: cards on the board can't be reached with the keyboard, and the
-right-click menu has no arrow-key support. The menu opens on the browser's
-context-menu event, so on touch devices that don't send one for a long press,
-use **⋯** in the people list instead.
+**The board from the keyboard.** The board is a single Tab stop. While it has
+keyboard focus, a dashed ring marks the current person, and screen readers
+read out their name, years, and whether they're selected.
+
+- **Arrow keys** move between people: left and right along a row, up and down
+  to the nearest person in the row above or below. **Home** and **End** go to
+  the ends of the row. The board pans to keep the person on screen.
+- Moving selects the person you land on. **Shift** with an arrow adds them to
+  the selection instead, so you can pick two people to link.
+- **Space** selects or deselects the current person. (After a mouse click on
+  the board, holding Space still pans.)
+- **Enter** opens the current person for editing.
+- **Shift+F10** or the **Menu** key opens their menu, the same one a
+  right-click opens. On an empty board it offers **Add a person here**.
+- **Delete** and **Backspace** delete the selection, as above.
+
+**Menus.** A menu opened from the keyboard starts on its first item; one opened
+by right-click or long-press takes focus without highlighting anything. **Up**
+and **Down** move between items (wrapping round), **Home** and **End** jump to
+the first and last, **Enter** or **Space** picks one, and **Escape** or **Tab**
+closes the menu. Focus goes back to where it was, including after a dialog
+that the item opened.
+
+**Touch.** Holding a finger still on a card or on the empty board for half a
+second opens the same menu a right-click does. Moving the finger first (to
+drag or pan), or putting down a second finger (to pinch), cancels it.
 
 ### Exporting
 
