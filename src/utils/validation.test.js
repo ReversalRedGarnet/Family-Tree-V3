@@ -69,6 +69,26 @@ describe('validateRelationship', () => {
     expect(result.error).toMatch(/already partnered/);
   });
 
+  it('a separated partnership still blocks a new current one, for either side (F3)', () => {
+    const relationships = { r1: { kind: 'partner', a: 'a', b: 'c', status: 'separated' } };
+    for (const [x, y] of [['a', 'b'], ['b', 'a']]) {
+      const result = validateRelationship('partner', x, y, people, relationships, { status: 'together' });
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/already partnered/);
+    }
+    expect(validateRelationship('partner', 'c', 'b', people, relationships).ok).toBe(false);
+  });
+
+  it('a separated partnership does not block recording an ended one (F3)', () => {
+    const relationships = { r1: { kind: 'partner', a: 'a', b: 'c', status: 'separated' } };
+    expect(validateRelationship('partner', 'a', 'b', people, relationships, { status: 'divorced' }).ok).toBe(true);
+  });
+
+  it('once the separation becomes a divorce, a new current partnership is fine (F3)', () => {
+    const relationships = { r1: { kind: 'partner', a: 'a', b: 'c', status: 'divorced' } };
+    expect(validateRelationship('partner', 'a', 'b', people, relationships, { status: 'together' }).ok).toBe(true);
+  });
+
   it('rejects sibling links between two people already parent and child', () => {
     const relationships = { r1: { kind: 'parent', a: 'a', b: 'b' } };
     const result = validateRelationship('sibling', 'a', 'b', people, relationships);

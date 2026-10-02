@@ -1,4 +1,4 @@
-import { wouldCreateCycle, activePartnersOf, generationOffset, isBirthLink } from './generations';
+import { wouldCreateCycle, generationOffset, isBirthLink } from './generations';
 import { getPersonDateWarnings, getParentChildAgeWarnings, parseYear } from './dates';
 import { formatName } from './names';
 
@@ -13,6 +13,22 @@ const displayName = (people, id) => {
 // A partnership that has ended. Together, separated and no status at all are
 // all still current.
 export const isEndedPartnership = (status) => status === 'divorced' || status === 'widowed';
+
+// Everyone this person is in a partnership with that hasn't ended. Unlike
+// activePartnersOf (generations.js), this counts separated: a separation
+// isn't a divorce, so it still blocks a new current partnership.
+// activePartnersOf leaves separated out on purpose, for a different
+// question (who to auto-link as a new child's other parent).
+function unconcludedPartnersOf(personId, relationships) {
+  return Object.values(relationships)
+    .filter(
+      (rel) =>
+        rel.kind === 'partner' &&
+        (rel.a === personId || rel.b === personId) &&
+        !isEndedPartnership(rel.status)
+    )
+    .map((rel) => (rel.a === personId ? rel.b : rel.a));
+}
 
 // The only blocking rules left are the ones that would make the tree
 // self-contradictory. Everything else — no parents yet, no partner, a child
@@ -81,8 +97,8 @@ export function validateRelationship(kind, aId, bId, people, relationships, deta
     // widowed) don't count here either, for the same remarriage reason
     // they don't count as a duplicate above. Only a CURRENT new partnership
     // is held to this; recording an ended one never is.
-    const aTaken = newPartnershipIsCurrent ? activePartnersOf(aId, relationships).filter((id) => id !== bId) : [];
-    const bTaken = newPartnershipIsCurrent ? activePartnersOf(bId, relationships).filter((id) => id !== aId) : [];
+    const aTaken = newPartnershipIsCurrent ? unconcludedPartnersOf(aId, relationships).filter((id) => id !== bId) : [];
+    const bTaken = newPartnershipIsCurrent ? unconcludedPartnersOf(bId, relationships).filter((id) => id !== aId) : [];
     const taken = (id, otherId) => ({
       ok: false,
       error: `${displayName(people, id)} is already partnered with ${displayName(people, otherId)}. Mark that link as divorced or widowed first (click it, then Edit link…).`,
