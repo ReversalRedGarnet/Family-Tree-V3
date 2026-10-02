@@ -393,6 +393,26 @@ describe('useDriveSync download path', () => {
     unmount();
   });
 
+  it('gives people downloaded without a position their own slots (F5)', async () => {
+    downloadAppDataFile.mockResolvedValueOnce({
+      people: { a: { firstName: 'A' }, b: { firstName: 'B' }, c: { firstName: 'C' } },
+      relationships: {},
+    });
+    const replaceGraph = vi.fn();
+    const { result, unmount } = renderHook(() =>
+      useDriveSync({ people: {}, relationships: {}, replaceGraph, pushToast: vi.fn() })
+    );
+
+    await act(async () => {
+      await result.current.signIn();
+    });
+
+    const [graph] = replaceGraph.mock.calls[0];
+    const xs = Object.values(graph.people).map((p) => p.position.x);
+    expect(new Set(xs).size).toBe(3);
+    unmount();
+  });
+
   it('refuses a tree saved by a different version instead of loading it half-understood', async () => {
     downloadAppDataFile.mockResolvedValueOnce({ version: 999, people: { a: { firstName: 'A' } }, relationships: {} });
     const replaceGraph = vi.fn();

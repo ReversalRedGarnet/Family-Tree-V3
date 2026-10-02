@@ -130,6 +130,41 @@ export function placeCard(people, generation, { id, anchorIds, x }) {
   return Math.round(findNearestFreeX(obstacles, desired));
 }
 
+// ---- People loaded without a position ----
+//
+// A save can name someone with no position at all: a hand-edited file, a
+// very old save, or a Drive file written by something else. Each of them
+// gets a free slot on their own generation row, beside whichever of their
+// relatives already have a position. They are placed in id order, each
+// one counting as an obstacle for the next, so the same file always opens
+// the same way and no two of them share a spot. People who did have a
+// position are never moved.
+export function placeUnpositioned(graph, ids) {
+  if (!ids.length) return graph;
+  const { generation } = computeGenerations(graph.people, graph.relationships);
+  const pending = new Set(ids);
+
+  const settled = {};
+  Object.entries(graph.people).forEach(([id, person]) => {
+    if (!pending.has(id)) settled[id] = person;
+  });
+
+  const relativesOf = (id) =>
+    Object.values(graph.relationships)
+      .filter((rel) => rel.a === id || rel.b === id)
+      .map((rel) => (rel.a === id ? rel.b : rel.a))
+      .sort();
+
+  [...pending].sort().forEach((id) => {
+    const gen = generation[id] ?? 0;
+    const anchorIds = relativesOf(id).filter((rid) => settled[rid]);
+    const x = placeCard(settled, generation, { id, anchorIds });
+    settled[id] = { ...graph.people[id], placed: false, placedGen: gen, position: { x, y: rowY(gen) } };
+  });
+
+  return { ...graph, people: { ...graph.people, ...Object.fromEntries([...pending].map((id) => [id, settled[id]])) } };
+}
+
 // ---- Collisions ----
 
 // Adding a card never moves anyone now, but rows can still end up with two
