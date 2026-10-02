@@ -7,7 +7,8 @@ export default {
         paper: '#F6FAFB',      // the board — soft off-white with a cyan cast
         card: '#FFFFFF',
         ink: '#103A44',        // deep teal-ink, never pure black
-        mist: '#5B7C85',       // secondary text
+        // Secondary text. 4.9:1 on cyan-wash, 5.2:1 on paper, 5.5:1 on white.
+        mist: '#4E6E77',
         hairline: '#D3E7EB',
         cyan: {
           DEFAULT: '#0EA5B7',

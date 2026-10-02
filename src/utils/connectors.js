@@ -33,6 +33,39 @@ export function siblingStyleKey(rel) {
 
 // Parent links are grouped into a shared drop so a couple's children hang
 // from one trunk instead of a fan of crossing diagonals.
+// ---- Partner lines that would cross other cards ----
+// Partners usually sit side by side, joined by a straight line. When other
+// cards sit between them in the row (an ex placed beyond a current
+// partner, say), that straight line would run behind those cards and over
+// their own partner lines, where a click could pick the wrong link. Such a
+// line drops under the row instead, as a bracket. Each extra card skipped
+// takes it a step deeper, so two brackets from the same person don't share
+// a run.
+const BRACKET_DEPTH = 16;
+const BRACKET_STEP = 12;
+
+function cardsBetween(aId, bId, positions) {
+  const a = positions[aId];
+  const b = positions[bId];
+  if (!a || !b || Math.abs(a.y - b.y) > 1) return 0;
+  const left = Math.min(a.x, b.x);
+  const right = Math.max(a.x, b.x);
+  let count = 0;
+  Object.entries(positions).forEach(([id, p]) => {
+    if (id === aId || id === bId) return;
+    if (Math.abs(p.y - a.y) < CARD_HEIGHT && p.x > left && p.x < right) count += 1;
+  });
+  return count;
+}
+
+// The y of the bracket under two partners, or null when a straight line
+// between them is clear.
+export function partnerBracketY(aId, bId, positions) {
+  const between = cardsBetween(aId, bId, positions);
+  if (!between) return null;
+  return positions[aId].y + HALF_H + BRACKET_DEPTH + BRACKET_STEP * (between - 1);
+}
+
 function parentConnectors(rels, positions) {
   const byChild = new Map();
   rels.forEach((rel) => {
@@ -47,9 +80,10 @@ function parentConnectors(rels, positions) {
     const soft = childRels.some((r) => r.type && r.type !== 'birth');
     const parentIds = childRels.map((r) => r.a).sort();
     const key = `${parentIds.join('|')}::${soft ? 'soft' : 'birth'}`;
-    if (!groups.has(key)) groups.set(key, { parentIds, soft, childIds: [], relIds: [] });
+    if (!groups.has(key)) groups.set(key, { parentIds, soft, childIds: [], relIds: [], relsByChild: {} });
     groups.get(key).childIds.push(childId);
     groups.get(key).relIds.push(...childRels.map((r) => r.id));
+    groups.get(key).relsByChild[childId] = childRels.map((r) => r.id);
   });
 
   const out = [];
@@ -59,7 +93,11 @@ function parentConnectors(rels, positions) {
     if (!parentPts.length || !childPts.length) return;
 
     const anchorX = parentPts.reduce((sum, p) => sum + p.x, 0) / parentPts.length;
-    const anchorY = Math.max(...parentPts.map((p) => p.y)) + HALF_H;
+    // Two parents joined by a bracket: the trunk hangs from the bracket,
+    // not from the bottom of whoever happens to sit between them.
+    const bracketY =
+      group.parentIds.length === 2 ? partnerBracketY(group.parentIds[0], group.parentIds[1], positions) : null;
+    const anchorY = bracketY ?? Math.max(...parentPts.map((p) => p.y)) + HALF_H;
     const childTop = Math.min(...childPts.map((p) => p.y)) - HALF_H;
     const busY = Math.max(anchorY + 22, childTop - 26);
 
@@ -81,6 +119,16 @@ function parentConnectors(rels, positions) {
       segments,
       childTops: childPts.map((pt) => ({ x: pt.x, y: pt.y - HALF_H })),
       relIds: group.relIds,
+      // Each child's own drop from the bus. Unlike the shared trunk and bus,
+      // it stands for exactly that child's parent links, so it is the part
+      // of the line a click can mean something on.
+      childLinks: group.childIds
+        .filter((id) => positions[id])
+        .map((id) => ({
+          childId: id,
+          relIds: group.relsByChild[id],
+          segment: [positions[id].x, busY, positions[id].x, positions[id].y - HALF_H],
+        })),
       // Dropping here means "another child for these parents".
       droppable: true,
       parentIds: group.parentIds,
@@ -99,12 +147,23 @@ function partnerConnectors(rels, positions) {
     if (!a || !b) return;
 
     const style = LINE_STYLES[partnerStyleKey(rel)] || LINE_STYLES.partner;
+    const bracketY = partnerBracketY(rel.a, rel.b, positions);
+    const segments =
+      bracketY === null
+        ? [[a.x, a.y, b.x, b.y]]
+        : [
+            [a.x, a.y + HALF_H, a.x, bracketY],
+            [a.x, bracketY, b.x, bracketY],
+            [b.x, bracketY, b.x, b.y + HALF_H],
+          ];
     out.push({
       key: `partner:${rel.id}`,
       kind: 'partner',
       style,
-      segments: [[a.x, a.y, b.x, b.y]],
-      marker: { kind: style.marker, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      segments,
+      // The same path as one polyline, for drawing.
+      points: bracketY === null ? segments[0] : [a.x, a.y + HALF_H, a.x, bracketY, b.x, bracketY, b.x, b.y + HALF_H],
+      marker: { kind: style.marker, x: (a.x + b.x) / 2, y: bracketY ?? (a.y + b.y) / 2 },
       relId: rel.id,
       // A couple with no children yet has no parent line to aim at, so the
       // line between them is the only target there is — and it is the

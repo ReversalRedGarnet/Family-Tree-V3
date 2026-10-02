@@ -10,6 +10,7 @@ import ToastStack from './components/ToastStack';
 import Tooltip from './components/Tooltip';
 import { useFamilyTree } from './hooks/useFamilyTree';
 import { useToasts } from './hooks/useToasts';
+import { useConfirmQueue } from './hooks/useConfirmQueue';
 import { useMediaQuery } from './hooks/useMediaQuery';
 import { useDriveSync } from './hooks/useDriveSync';
 import {
@@ -27,12 +28,13 @@ import {
   partnerChildLinksToWrite,
 } from './utils/generations';
 import { exportAsPng, exportAsPdf } from './utils/exportTree';
-import { saveGraph } from './utils/storage';
+import { saveGraph, downloadRawSave } from './utils/storage';
+import { formatName } from './utils/names';
 import { MOBILE_BREAKPOINT, exportThemeFor } from './utils/constants';
 
 const CLOSED_MENU = { open: false, x: 0, y: 0, items: [] };
 const CLOSED_PERSON = { open: false, mode: 'add', editingId: null, pending: null };
-const CLOSED_LINK = { open: false, a: null, b: null, preset: 'partner', error: null };
+const CLOSED_LINK = { open: false, a: null, b: null, preset: 'partner', error: null, editingId: null };
 
 function nextPaint() {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -67,7 +69,7 @@ export default function App() {
   const [exportModal, setExportModal] = useState({ open: false, busy: false });
   const [exportMemo, setExportMemo] = useState(null);
   const [activeExportTheme, setActiveExportTheme] = useState(null);
-  const [confirmState, setConfirmState] = useState(null);
+  const { current: confirmState, ask: askConfirm, resolve: resolveConfirm } = useConfirmQueue();
   const [contextMenu, setContextMenu] = useState(CLOSED_MENU);
 
   const { people, relationships, loadRepairedCount, selectedIds, generation, conflicts } = tree;
@@ -79,9 +81,9 @@ export default function App() {
   });
 
   // Drive found a version it can't reconcile silently — hand it to the
-  // person through the same single confirm-dialog slot everything else
-  // uses, rather than a second dialog that could stack on top of one
-  // already open. Whichever they pick overwrites the other side; Undo
+  // person through the same confirm queue everything else uses. If another
+  // question is already open, this one waits behind it rather than
+  // replacing it. Whichever they pick overwrites the other side; Undo
   // reaches back through it immediately after (and re-syncs, since an
   // undo is just another change), but only until the next reload.
   useEffect(() => {
@@ -89,17 +91,15 @@ export default function App() {
     const savedWhen = drive.conflict.driveSavedAt
       ? new Date(drive.conflict.driveSavedAt).toLocaleString()
       : 'earlier';
-    setConfirmState({
+    askConfirm({
       title: 'Different tree on Google Drive',
       message: `Drive has a different version of this tree, last saved ${savedWhen}. Whichever you pick overwrites the other — Undo gets you back right after, but not once you reload.`,
       confirmLabel: "Use Drive's version",
       cancelLabel: 'Keep this device',
       onConfirm: () => {
-        setConfirmState(null);
         drive.resolveConflict('use-drive');
       },
       onCancel: () => {
-        setConfirmState(null);
         drive.resolveConflict('keep-local');
       },
     });
@@ -129,13 +129,45 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The save in this browser couldn't be used, so the board started empty.
+  // The original is never silently lost: loadGraph() copied it to a backup
+  // key, and if even that copy failed, autosave stays paused until the
+  // person has downloaded it.
+  const { loadIssue } = tree;
+  const [saveBlocked, setSaveBlocked] = useState(() => Boolean(loadIssue && !loadIssue.backupKey));
+  useEffect(() => {
+    if (!loadIssue) return;
+    const what =
+      loadIssue.status === 'unsupported-version'
+        ? 'The tree saved in this browser was made by a different version of this app, so the board starts empty.'
+        : "The tree saved in this browser couldn't be read, so the board starts empty.";
+    const next = loadIssue.backupKey
+      ? ' A copy was kept in this browser — download it to keep it safe.'
+      : " Autosave is paused until you download your saved copy, so it isn't overwritten.";
+    pushToast(`${what}${next}`, 'warning', 0, {
+      label: 'Download it',
+      onClick: () => {
+        downloadRawSave(loadIssue.raw);
+        setSaveBlocked(false);
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Persisted to this browser only — no account, no sync elsewhere. Runs on
   // every structural change (add, delete, link, drag-end, etc.), not on
   // every keystroke, since those only touch the open form's local state
   // until Save is pressed. Warns once per session rather than on every
   // failed write, so a full/disabled storage doesn't spam toasts.
   const warnedAboutSaveRef = useRef(false);
+  const initialGraphRef = useRef({ people, relationships });
   useEffect(() => {
+    if (saveBlocked) return;
+    // After an unusable load, the empty starting board isn't worth writing
+    // over the original -- wait for the first real change.
+    const untouched =
+      people === initialGraphRef.current.people && relationships === initialGraphRef.current.relationships;
+    if (loadIssue && untouched) return;
     const ok = saveGraph({ people, relationships });
     if (!ok && !warnedAboutSaveRef.current && (Object.keys(people).length || Object.keys(relationships).length)) {
       warnedAboutSaveRef.current = true;
@@ -145,13 +177,13 @@ export default function App() {
         6000
       );
     }
-  }, [people, relationships, pushToast]);
+  }, [people, relationships, pushToast, loadIssue, saveBlocked]);
 
   const closeMenu = useCallback(() => setContextMenu(CLOSED_MENU), []);
   const nameOf = useCallback(
     (id) => {
       const p = people[id];
-      return p ? `${p.firstName} ${p.lastName}`.trim() || 'Unnamed' : 'Someone';
+      return p ? formatName(p) : 'Someone';
     },
     [people]
   );
@@ -171,19 +203,31 @@ export default function App() {
     [people]
   );
 
-  const requestDeletePerson = useCallback(
-    (id) => {
-      const person = people[id];
-      if (!person) return;
-      const { linkCount, childCount } = describeDeleteImpact(id, people, relationships);
+  // "N links will be removed. M children stay on the board…", for one
+  // person or several.
+  const deleteImpactText = useCallback(
+    (ids, plural) => {
+      const { linkCount, childCount } = describeDeleteImpact(ids, people, relationships);
       const details = [];
       if (linkCount) details.push(`${linkCount} link${linkCount > 1 ? 's' : ''} will be removed.`);
       if (childCount) {
         details.push(
-          `${childCount} ${childCount > 1 ? 'children stay' : 'child stays'} on the board, just without this parent.`
+          `${childCount} ${childCount > 1 ? 'children stay' : 'child stays'} on the board, just without ${
+            plural ? 'these parents' : 'this parent'
+          }.`
         );
       }
-      setConfirmState({
+      return details;
+    },
+    [people, relationships]
+  );
+
+  const requestDeletePerson = useCallback(
+    (id) => {
+      const person = people[id];
+      if (!person) return;
+      const details = deleteImpactText([id], false);
+      askConfirm({
         title: `Delete ${nameOf(id)}?`,
         message: details.join('\n\n') || 'They have no links, so nothing else changes.',
         danger: true,
@@ -191,12 +235,11 @@ export default function App() {
         onConfirm: () => {
           tree.deletePerson(id);
           setPersonModal((pm) => (pm.editingId === id ? CLOSED_PERSON : pm));
-          setConfirmState(null);
           pushToast(`${nameOf(id)} deleted.`, 'success', 3000);
         },
       });
     },
-    [people, relationships, tree, pushToast, nameOf]
+    [people, tree, pushToast, nameOf, deleteImpactText]
   );
 
   const requestDeleteSelected = useCallback(() => {
@@ -205,18 +248,20 @@ export default function App() {
       requestDeletePerson(selectedIds[0]);
       return;
     }
-    setConfirmState({
-      title: `Delete ${selectedIds.length} people?`,
-      message: `This removes ${selectedIds.map(nameOf).join(', ')} and every link they have.`,
+    const ids = [...selectedIds];
+    askConfirm({
+      title: `Delete ${ids.length} people?`,
+      message: [`This removes ${ids.map(nameOf).join(', ')}.`, ...deleteImpactText(ids, true)].join('\n\n'),
       danger: true,
       confirmLabel: 'Delete all',
       onConfirm: () => {
-        selectedIds.forEach((id) => tree.deletePerson(id));
-        setConfirmState(null);
-        pushToast('Deleted.', 'success', 3000);
+        // One commit, so one Undo brings them all back.
+        tree.deleteMany(ids);
+        setPersonModal((pm) => (ids.includes(pm.editingId) ? CLOSED_PERSON : pm));
+        pushToast(`${ids.length} people deleted. Undo brings them all back.`, 'success', 4000);
       },
     });
-  }, [selectedIds, tree, pushToast, requestDeletePerson, nameOf]);
+  }, [selectedIds, tree, pushToast, requestDeletePerson, nameOf, askConfirm, deleteImpactText]);
 
   // The actual write, once any duplicate question has been settled.
   const commitPersonSave = useCallback(
@@ -303,13 +348,12 @@ export default function App() {
       const duplicate = findDuplicatePerson(formData, people, editing ? personModal.editingId : null);
 
       if (duplicate) {
-        const who = `${duplicate.firstName} ${duplicate.lastName}`.trim() || 'Unnamed';
-        setConfirmState({
+        const who = formatName(duplicate);
+        askConfirm({
           title: editing ? 'That matches someone else' : 'You already added this person',
           message: `${who} is already on the board with the same name, gender and year of birth.\n\nIf these really are two different people, carry on — it's worth giving one of them a distinguishing detail so they're easy to tell apart later.`,
           confirmLabel: editing ? 'Save anyway' : 'Add anyway',
           onConfirm: () => {
-            setConfirmState(null);
             commitPersonSave(formData);
           },
         });
@@ -362,12 +406,11 @@ export default function App() {
             4000
           );
         }
-        setConfirmState(null);
         return;
       }
 
       const [current, ...rest] = queue;
-      setConfirmState({
+      askConfirm({
         title: 'Also their child?',
         message: `Is ${nameOf(current.childId)} also ${nameOf(current.candidateParentId)}'s child?`,
         confirmLabel: 'Yes',
@@ -379,9 +422,49 @@ export default function App() {
     [tree, pushToast, nameOf]
   );
 
+  // Saving the link dialog in edit mode: only the link's own details change.
+  // Moving a partnership back to current (together/separated) is checked
+  // like a new one would be -- against every OTHER link on the board.
+  const handleLinkEdit = useCallback(
+    (relId, details, deceasedId) => {
+      const rel = relationships[relId];
+      if (!rel) {
+        setLinkModal(CLOSED_LINK);
+        return;
+      }
+      const others = { ...relationships };
+      delete others[relId];
+      const check = validateRelationship(rel.kind, rel.a, rel.b, people, others, details);
+      if (!check.ok) {
+        setLinkModal((m) => ({ ...m, error: check.error }));
+        return;
+      }
+      tree.updateRelationship(relId, details, deceasedId);
+      setLinkModal(CLOSED_LINK);
+      pushToast('Link updated.', 'success', 2200);
+      if (deceasedId && people[deceasedId]?.living !== false) {
+        pushToast(`${nameOf(deceasedId)} is now marked as no longer living.`, 'info', 4000);
+      }
+    },
+    [people, relationships, tree, pushToast, nameOf]
+  );
+
+  const openEditLink = useCallback(
+    (relId) => {
+      const rel = relationships[relId];
+      if (!rel) return;
+      setLinkModal({ open: true, a: rel.a, b: rel.b, preset: rel.kind, error: null, editingId: relId });
+    },
+    [relationships]
+  );
+
   const handleLinkConfirm = useCallback(
     (kind, aId, bId, details, deceasedId) => {
-      const check = validateRelationship(kind, aId, bId, people, relationships);
+      if (linkModal.editingId) {
+        handleLinkEdit(linkModal.editingId, details, deceasedId);
+        return;
+      }
+      const check = validateRelationship(kind, aId, bId, people, relationships, details);
       if (!check.ok) {
         setLinkModal((m) => ({ ...m, error: check.error }));
         return;
@@ -437,11 +520,19 @@ export default function App() {
         // doesn't change who anyone's existing children are, so planning
         // against the snapshot from before it landed is exactly right,
         // the same way planSiblingMerge plans its merge above.
-        const candidates = findUnlinkedPartnerChildren(aId, bId, relationships);
+        //
+        // Only children who could actually be the other partner's child
+        // are asked about -- checked against the board as it will be once
+        // this partnership exists, so a "yes" can never write a link that
+        // contradicts someone's generation or ancestry.
+        const withPartnership = { ...relationships, pending: { id: 'pending', kind: 'partner', a: aId, b: bId } };
+        const candidates = findUnlinkedPartnerChildren(aId, bId, relationships).filter(
+          (c) => validateRelationship('parent', c.candidateParentId, c.childId, people, withPartnership).ok
+        );
         if (candidates.length) askAboutSharedChildren(candidates, []);
       }
     },
-    [people, relationships, tree, pushToast, nameOf, askAboutSharedChildren]
+    [people, relationships, tree, pushToast, nameOf, askAboutSharedChildren, linkModal.editingId, handleLinkEdit]
   );
 
   // Dropping a card onto a parent line or a couple's line adopts the person
@@ -470,7 +561,7 @@ export default function App() {
       }
 
       const parentNames = linkable.map(nameOf).join(' and ');
-      setConfirmState({
+      askConfirm({
         title: `Make ${nameOf(draggedId)} a child of ${parentNames}?`,
         message: blocked.length
           ? `${nameOf(draggedId)} already has a recorded link to ${blocked
@@ -480,7 +571,6 @@ export default function App() {
         confirmLabel: 'Add link',
         onConfirm: () => {
           tree.addParentLinks(draggedId, linkable);
-          setConfirmState(null);
           pushToast(`${nameOf(draggedId)} is now ${parentNames}'s child.`, 'success', 3500);
         },
       });
@@ -491,7 +581,7 @@ export default function App() {
   const handleConflictClick = useCallback(
     (id) => {
       pushToast(
-        `${nameOf(id)} has a relationship that contradicts itself — for example, a link that would make them their own ancestor. They're pinned to row 0 until the conflicting link is removed or corrected.`,
+        `${nameOf(id)} has links that contradict each other — for example, two links that put them in different generations. Their row comes from whichever link placed them first; remove or correct the contradicting link to fix it.`,
         'warning',
         7000
       );
@@ -499,29 +589,43 @@ export default function App() {
     [pushToast, nameOf]
   );
 
+  // A click on a line. Most lines are one link; a child's drop from a
+  // parent line carries every parent link that child has (one per parent),
+  // so it arrives as a list and each link gets its own named items.
   const handleRelationshipClick = useCallback(
-    (relId, e) => {
-      const rel = relationships[relId];
-      if (!rel) return;
+    (relIdOrIds, e) => {
+      const rels = [relIdOrIds].flat().map((id) => relationships[id]).filter(Boolean);
+      if (!rels.length) return;
       e.cancelBubble = true;
-      setContextMenu({
-        open: true,
-        x: e.evt.clientX,
-        y: e.evt.clientY,
-        items: [
-          {
-            label: 'Remove this link',
-            danger: true,
-            hint: `${nameOf(rel.a)} and ${nameOf(rel.b)} both stay on the board.`,
-            onSelect: () => {
-              tree.deleteRelationship(relId);
-              pushToast('Link removed.', 'success', 2200);
-            },
-          },
-        ],
-      });
+      const remove = (rel) => () => {
+        tree.deleteRelationship(rel.id);
+        pushToast('Link removed.', 'success', 2200);
+      };
+      const items =
+        rels.length === 1
+          ? [
+              { label: 'Edit link…', onSelect: () => openEditLink(rels[0].id) },
+              {
+                label: 'Remove this link',
+                danger: true,
+                hint: `${nameOf(rels[0].a)} and ${nameOf(rels[0].b)} both stay on the board.`,
+                onSelect: remove(rels[0]),
+              },
+            ]
+          : [
+              ...rels.map((rel) => ({
+                label: `Edit ${nameOf(rel.a)} as ${nameOf(rel.b)}'s parent…`,
+                onSelect: () => openEditLink(rel.id),
+              })),
+              ...rels.map((rel) => ({
+                label: `Remove ${nameOf(rel.a)} as ${nameOf(rel.b)}'s parent`,
+                danger: true,
+                onSelect: remove(rel),
+              })),
+            ];
+      setContextMenu({ open: true, x: e.evt.clientX, y: e.evt.clientY, items });
     },
-    [relationships, tree, pushToast, nameOf]
+    [relationships, tree, pushToast, nameOf, openEditLink]
   );
 
   // ---------- Context menu ----------
@@ -606,7 +710,9 @@ export default function App() {
       // The template only ever exists for this one capture — the modal's
       // backdrop is covering the board the whole time, so nobody watches
       // it happen, and it's always put back afterward, success or not.
-      const theme = payload.themeId && payload.themeId !== 'board' ? exportThemeFor(payload.themeId) : null;
+      // Set even for the plain "board" template: Canvas only draws its
+      // paper background while a theme is set, i.e. while capturing.
+      const theme = exportThemeFor(payload.themeId || 'board');
       setActiveExportTheme(theme);
       await nextPaint();
       const result = await (kind === 'pdf' ? exportAsPdf : exportAsPng)(
@@ -617,20 +723,22 @@ export default function App() {
       setExportMemo(null);
       setExportModal({ open: false, busy: false });
       if (!result.ok) pushToast(result.error, 'error');
-      else pushToast(`Saved as ${kind.toUpperCase()}.`, 'success', 2500);
+      else {
+        pushToast(`Saved as ${kind.toUpperCase()}.`, 'success', 2500);
+        if (result.warning) pushToast(result.warning, 'warning', 8000);
+      }
     },
     [pushToast]
   );
 
   const requestReset = useCallback(() => {
-    setConfirmState({
+    askConfirm({
       title: 'Clear the board?',
       message: "Everyone and every link goes, including the saved copy in this browser. Undo still works until you close the tab.",
       danger: true,
       confirmLabel: 'Clear board',
       onConfirm: () => {
         tree.resetAll();
-        setConfirmState(null);
         pushToast('Board cleared.', 'success', 2200);
       },
     });
@@ -784,6 +892,7 @@ export default function App() {
         onRequestDelete={
           personModal.mode === 'edit' ? () => requestDeletePerson(personModal.editingId) : undefined
         }
+        onEditRelationship={openEditLink}
         onDeleteRelationship={(relId) => {
           tree.deleteRelationship(relId);
           pushToast('Link removed.', 'success', 2200);
@@ -797,6 +906,7 @@ export default function App() {
         people={people}
         relationships={relationships}
         presetKind={linkModal.preset}
+        editing={linkModal.editingId ? relationships[linkModal.editingId] : null}
         error={linkModal.error}
         onConfirm={handleLinkConfirm}
         onCancel={() => setLinkModal(CLOSED_LINK)}
@@ -813,21 +923,20 @@ export default function App() {
       <ContextMenu {...contextMenu} onClose={closeMenu} />
 
       <ConfirmDialog
+        // A new question remounts the dialog, so focus starts on its Cancel
+        // button again instead of staying on the button just pressed.
+        key={confirmState?.id ?? 'none'}
         open={Boolean(confirmState)}
         title={confirmState?.title}
         message={confirmState?.message}
         danger={confirmState?.danger}
         confirmLabel={confirmState?.confirmLabel}
         cancelLabel={confirmState?.cancelLabel}
-        onConfirm={() => confirmState?.onConfirm()}
-        // A confirmState with its own onCancel (the Drive conflict prompt's
-        // "keep this device" branch, and the shared-child questions below)
-        // needs that logic to actually run when the dialog is dismissed --
-        // this used to always just close the dialog regardless, silently
-        // skipping whatever onCancel was supposed to do. Falls back to a
-        // plain close for every confirmation that never needed more than
-        // that (delete, reset, duplicate-person, drag-adopt).
-        onCancel={() => (confirmState?.onCancel ? confirmState.onCancel() : setConfirmState(null))}
+        onConfirm={() => resolveConfirm('onConfirm')}
+        // Runs the question's own onCancel when it has one (the Drive
+        // conflict's "keep this device", the shared-child "No"); otherwise
+        // dismissing it is the whole answer.
+        onCancel={() => resolveConfirm('onCancel')}
       />
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />

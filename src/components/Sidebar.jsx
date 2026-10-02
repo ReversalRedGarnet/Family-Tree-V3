@@ -8,7 +8,7 @@ function fullName(person) {
 
 function Action({ label, detail, onClick, disabled, tone = 'quiet', children, collapsed }) {
   const tones = {
-    primary: 'bg-cyan text-white hover:bg-cyan-deep',
+    primary: 'bg-cyan-deep text-white hover:bg-ink',
     accent: 'bg-cyan-wash text-cyan-deep hover:bg-cyan-soft/50',
     quiet: 'bg-white text-ink border border-hairline hover:bg-cyan-wash',
     danger: 'bg-white text-rose border border-hairline hover:bg-rose/10',
@@ -289,7 +289,7 @@ export default function Sidebar({
           <div className="space-y-3">
             {roster.map(([gen, list]) => (
               <div key={gen}>
-                <p className="mb-1 tnum text-[10px] font-semibold uppercase tracking-[0.12em] text-mist/70">
+                <p className="mb-1 tnum text-[10px] font-semibold uppercase tracking-[0.12em] text-mist">
                   Generation {gen + 1}
                 </p>
                 <div className="space-y-1">
@@ -297,7 +297,7 @@ export default function Sidebar({
                     <div
                       key={person.id}
                       className={`flex items-center gap-0.5 rounded-lg transition-colors ${
-                        selectedIds.includes(person.id) ? 'bg-cyan text-white' : 'text-ink hover:bg-cyan-wash'
+                        selectedIds.includes(person.id) ? 'bg-cyan-deep text-white' : 'text-ink hover:bg-cyan-wash'
                       }`}
                     >
                       <button
@@ -313,11 +313,13 @@ export default function Sidebar({
                         title="Tap to select · double-tap to edit · tap a second person to select both"
                         className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left text-sm"
                       >
-                        <span className="flex-1 truncate">{fullName(person)}</span>
+                        <span className="flex-1 truncate" title={fullName(person)}>
+                          {fullName(person)}
+                        </span>
                         {person.living === false && (
                           <span
                             className={`shrink-0 text-[10px] ${
-                              selectedIds.includes(person.id) ? 'text-white/80' : 'text-slate-quiet'
+                              selectedIds.includes(person.id) ? 'text-white/90' : 'text-mist'
                             }`}
                           >
                             ✝
@@ -334,7 +336,7 @@ export default function Sidebar({
                         title="Add a parent, child, sibling, or delete"
                         className={`shrink-0 rounded-lg px-2 py-1.5 text-sm transition-colors ${
                           selectedIds.includes(person.id)
-                            ? 'text-white/80 hover:bg-white/10 hover:text-white'
+                            ? 'text-white/90 hover:bg-white/10 hover:text-white'
                             : 'text-mist hover:bg-cyan-soft/50 hover:text-ink'
                         }`}
                       >

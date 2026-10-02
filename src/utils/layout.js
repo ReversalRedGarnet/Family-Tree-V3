@@ -22,6 +22,8 @@ import {
   SLOT_STEP,
   ORIGIN_X,
   MIN_SLOT_GAP,
+  CARD_WIDTH,
+  DROP_CLEARANCE,
 } from './constants';
 import { computeGenerations, parentsOf, partnersOf, childrenOf, siblingGroupOf } from './generations';
 
@@ -139,7 +141,12 @@ export function placeCard(people, generation, { id, anchorIds, x }) {
 //
 // Priority decides who keeps their exact x:
 //   the card just added  — it already searched for a genuinely free slot
-//   a hand-dragged card  — the user put it there on purpose
+//   a hand-dragged card  — the user put it there on purpose, so it is
+//                          NEVER moved here, not even by another dragged
+//                          card (overlaps between dragged cards are settled
+//                          at the moment of the drop instead — see
+//                          settleDroppedX — and Tidy rows is the only
+//                          thing that rearranges them)
 //   everyone else        — placed automatically, so fair game to move
 function resolveCollisions(people, generation, newId) {
   const rows = new Map();
@@ -180,7 +187,7 @@ function resolveCollisions(people, generation, newId) {
     const claimed = [];
     row.forEach((person) => {
       const x = person.position?.x ?? 0;
-      if (isClear(x, claimed)) {
+      if ((person.placed && person.id !== newId) || isClear(x, claimed)) {
         claimed.push(x);
         return;
       }
@@ -193,6 +200,26 @@ function resolveCollisions(people, generation, newId) {
   return out;
 }
 
+// ---- Dropping a dragged card ----
+
+// Where a card dropped at `x` actually rests. A drop is honoured exactly
+// unless the card would overlap another card in its row; then the DROPPED
+// card -- and only it -- moves to the nearest spot just clear of its
+// neighbours. Nobody else is ever pushed aside to make room.
+export function settleDroppedX(people, generation, id, x) {
+  const gen = generation[id] ?? 0;
+  const others = rowObstacles(people, generation, gen, id);
+  const overlaps = (candidate) => others.some((ox) => Math.abs(ox - candidate) < CARD_WIDTH);
+  if (!overlaps(x)) return x;
+
+  const candidates = others.flatMap((ox) => [ox - DROP_CLEARANCE, ox + DROP_CLEARANCE]).filter((c) => !overlaps(c));
+  // Nearest to where it was dropped; an exact tie goes left, so the same
+  // drop always lands in the same place. There's always at least one
+  // candidate: just right of the rightmost card is clear of everyone.
+  candidates.sort((p, q) => Math.abs(p - x) - Math.abs(q - x) || p - q);
+  return candidates[0];
+}
+
 // ---- Passes ----
 
 export function autoLayout(graph, hint = null) {
@@ -201,18 +228,17 @@ export function autoLayout(graph, hint = null) {
 
   Object.entries(graph.people).forEach(([id, person]) => {
     const gen = generation[id] ?? 0;
-    // A dragged card keeps exactly where it was put — unless new links have
-    // since moved it to a different generation, in which case its old row is
-    // simply the wrong one.
+    // A dragged card keeps exactly the x it was put at — unless new links
+    // have since moved it to a different generation, in which case its old
+    // spot is in the wrong row. Every card sits ON its row: y is never
+    // anything else (a card dragged off its row by an older build is put
+    // back here).
     const keep = person.placed && person.placedGen === gen;
     people[id] = {
       ...person,
       placed: keep,
       placedGen: gen,
-      position: {
-        x: person.position?.x ?? ORIGIN_X,
-        y: keep ? person.position?.y ?? rowY(gen) : rowY(gen),
-      },
+      position: { x: person.position?.x ?? ORIGIN_X, y: rowY(gen) },
     };
   });
 

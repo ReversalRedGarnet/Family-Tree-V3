@@ -1,34 +1,59 @@
-import { wouldCreateCycle, parentsOf, activePartnersOf } from './generations';
-import { getPersonDateWarnings, getParentChildAgeWarnings } from './dates';
+import { wouldCreateCycle, generationOffset, isBirthLink } from './generations';
+import { getPersonDateWarnings, getParentChildAgeWarnings, parseYear } from './dates';
+import { formatName } from './names';
 
 const unordered = (rel, x, y) =>
   (rel.a === x && rel.b === y) || (rel.a === y && rel.b === x);
 
 const displayName = (people, id) => {
   const p = people[id];
-  return p ? `${p.firstName} ${p.lastName}`.trim() || 'Unnamed' : 'Someone';
+  return p ? formatName(p) : 'Someone';
 };
+
+// A partnership that has ended. Together, separated and no status at all are
+// all still current.
+export const isEndedPartnership = (status) => status === 'divorced' || status === 'widowed';
+
+// Everyone this person is in a partnership with that hasn't ended. Unlike
+// activePartnersOf (generations.js), this counts separated: a separation
+// isn't a divorce, so it still blocks a new current partnership.
+// activePartnersOf leaves separated out on purpose, for a different
+// question (who to auto-link as a new child's other parent).
+function unconcludedPartnersOf(personId, relationships) {
+  return Object.values(relationships)
+    .filter(
+      (rel) =>
+        rel.kind === 'partner' &&
+        (rel.a === personId || rel.b === personId) &&
+        !isEndedPartnership(rel.status)
+    )
+    .map((rel) => (rel.a === personId ? rel.b : rel.a));
+}
 
 // The only blocking rules left are the ones that would make the tree
 // self-contradictory. Everything else — no parents yet, no partner, a child
 // with a single parent — is allowed, because none of that is an error.
-export function validateRelationship(kind, aId, bId, people, relationships) {
+//
+// `details` is the new link's own fields; for a partner link its `status`
+// decides whether the exclusivity rules below apply at all.
+export function validateRelationship(kind, aId, bId, people, relationships, details = {}) {
   if (!aId || !bId) return { ok: false, error: 'Pick two people first.' };
   if (aId === bId) return { ok: false, error: "You can't link someone to themselves." };
   if (!people[aId] || !people[bId]) {
     return { ok: false, error: 'One of those people is no longer on the board.' };
   }
 
+  // An ended partnership is history, not a current claim on anyone: it can
+  // be recorded alongside a current one, with someone else or with the same
+  // person (married, divorced, remarried).
+  const newPartnershipIsCurrent = kind === 'partner' && !isEndedPartnership(details.status);
+
   const existing = Object.values(relationships).find((rel) => {
     if (rel.kind !== kind) return false;
     if (kind === 'parent') return rel.a === aId && rel.b === bId;
     if (kind === 'partner') {
-      // A concluded partnership doesn't block a fresh one between the same
-      // two people — that's a remarriage, a new chapter in their history,
-      // not a duplicate of the old one. Only an unconcluded link (together
-      // or separated — nothing has actually ended yet) counts as the
-      // duplicate.
-      return unordered(rel, aId, bId) && rel.status !== 'divorced' && rel.status !== 'widowed';
+      // Only two CURRENT partnerships between the same pair are duplicates.
+      return newPartnershipIsCurrent && unordered(rel, aId, bId) && !isEndedPartnership(rel.status);
     }
     return unordered(rel, aId, bId);
   });
@@ -70,21 +95,16 @@ export function validateRelationship(kind, aId, bId, people, relationships) {
     // one catches the SAME pair twice, this one catches a person already
     // spoken for by a DIFFERENT pair. Concluded partnerships (divorced,
     // widowed) don't count here either, for the same remarriage reason
-    // they don't count as a duplicate above.
-    const aTaken = activePartnersOf(aId, relationships).filter((id) => id !== bId);
-    const bTaken = activePartnersOf(bId, relationships).filter((id) => id !== aId);
-    if (aTaken.length) {
-      return {
-        ok: false,
-        error: `${displayName(people, aId)} is already partnered with ${displayName(people, aTaken[0])} — that link needs to end first.`,
-      };
-    }
-    if (bTaken.length) {
-      return {
-        ok: false,
-        error: `${displayName(people, bId)} is already partnered with ${displayName(people, bTaken[0])} — that link needs to end first.`,
-      };
-    }
+    // they don't count as a duplicate above. Only a CURRENT new partnership
+    // is held to this; recording an ended one never is.
+    const aTaken = newPartnershipIsCurrent ? unconcludedPartnersOf(aId, relationships).filter((id) => id !== bId) : [];
+    const bTaken = newPartnershipIsCurrent ? unconcludedPartnersOf(bId, relationships).filter((id) => id !== aId) : [];
+    const taken = (id, otherId) => ({
+      ok: false,
+      error: `${displayName(people, id)} is already partnered with ${displayName(people, otherId)}. Mark that link as divorced or widowed first (click it, then Edit link…).`,
+    });
+    if (aTaken.length) return taken(aId, aTaken[0]);
+    if (bTaken.length) return taken(bId, bTaken[0]);
   }
 
   if (kind === 'sibling') {
@@ -105,15 +125,44 @@ export function validateRelationship(kind, aId, bId, people, relationships) {
     }
   }
 
+  // The general rule behind every check above: a link must agree with the
+  // generations the existing links already give these two people. A parent
+  // sits exactly one row above their child; partners and siblings share a
+  // row. Anything else would put someone in two generations at once.
+  const required = kind === 'parent' ? 1 : kind === 'partner' || kind === 'sibling' ? 0 : null;
+  if (required !== null) {
+    const offset = generationOffset(aId, bId, people, relationships);
+    if (offset !== null && offset !== required) {
+      return { ok: false, error: generationConflictMessage(kind, offset, displayName(people, aId), displayName(people, bId)) };
+    }
+  }
+
   return { ok: true };
 }
 
-export function describeDeleteImpact(personId, people, relationships) {
-  const links = Object.values(relationships).filter(
-    (rel) => rel.a === personId || rel.b === personId
+// `offset` is how many generations below A the existing links put B.
+function generationConflictMessage(kind, offset, aName, bName) {
+  const gens = (n) => `${n} generation${n === 1 ? '' : 's'}`;
+  const where =
+    offset === 0
+      ? `${aName} and ${bName} are already in the same generation`
+      : offset > 0
+        ? `${bName} is already ${gens(offset)} below ${aName}`
+        : `${bName} is already ${gens(-offset)} above ${aName}`;
+  if (kind === 'parent') return `${where}, so ${aName} can't be ${bName}'s parent.`;
+  return `${where}, so they can't be ${kind === 'partner' ? 'partners' : 'siblings'}.`;
+}
+
+// What deleting one person, or several at once, takes with it: every link
+// touching any of them, and the children who stay behind (a child who is
+// also being deleted isn't "staying on the board").
+export function describeDeleteImpact(personIdOrIds, people, relationships) {
+  const ids = new Set([personIdOrIds].flat());
+  const links = Object.values(relationships).filter((rel) => ids.has(rel.a) || ids.has(rel.b));
+  const children = new Set(
+    links.filter((rel) => rel.kind === 'parent' && ids.has(rel.a) && !ids.has(rel.b)).map((rel) => rel.b)
   );
-  const children = links.filter((rel) => rel.kind === 'parent' && rel.a === personId).length;
-  return { linkCount: links.length, childCount: children };
+  return { linkCount: links.length, childCount: children.size };
 }
 
 // ---- Duplicate detection ----
@@ -155,17 +204,29 @@ export function collectTreeWarnings(people, relationships) {
   const note = (person, message) =>
     warnings.push({
       personId: person.id,
-      name: `${person.firstName} ${person.lastName}`.trim() || 'Unnamed',
+      name: formatName(person),
       message,
     });
 
   Object.values(people).forEach((person) => {
     getPersonDateWarnings(person).forEach((message) => note(person, message));
 
-    const parents = parentsOf(person.id, relationships).map((id) => people[id]).filter(Boolean);
-    getParentChildAgeWarnings(person, parents[0], parents[1]).forEach((message) =>
-      note(person, message)
-    );
+    // Age gaps only say something about birth parents: a step-parent five
+    // years older than their stepchild is entirely ordinary.
+    const birthParents = Object.values(relationships)
+      .filter((rel) => rel.kind === 'parent' && rel.b === person.id && isBirthLink(rel))
+      .map((rel) => people[rel.a])
+      .filter(Boolean);
+    getParentChildAgeWarnings(person, ...birthParents).forEach((message) => note(person, message));
+  });
+
+  Object.values(relationships).forEach((rel) => {
+    if (rel.kind !== 'partner' || !people[rel.a] || !people[rel.b]) return;
+    const start = parseYear(rel.startDate);
+    const end = parseYear(rel.endDate);
+    if (start && end && end < start) {
+      note(people[rel.a], `Their partnership with ${formatName(people[rel.b])} ends (${end}) before it starts (${start}).`);
+    }
   });
 
   return warnings;

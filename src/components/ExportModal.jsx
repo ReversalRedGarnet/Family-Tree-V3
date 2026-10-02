@@ -41,7 +41,7 @@ export default function ExportModal({ open, busy, onExportPng, onExportPdf, onCa
         disabled={busy}
         placeholder="the Okafor family"
         onChange={(e) => setName(e.target.value)}
-        className="w-full rounded-xl border border-hairline bg-white px-3 py-2.5 text-sm text-ink placeholder:text-mist/60 focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/30 disabled:opacity-50"
+        className="w-full rounded-xl border border-hairline bg-white px-3 py-2.5 text-sm text-ink placeholder:text-mist focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/30 disabled:opacity-50"
       />
 
       <p className="mt-2.5 rounded-lg bg-paper px-3 py-2 tnum text-[11px] leading-relaxed text-mist">
@@ -82,7 +82,7 @@ export default function ExportModal({ open, busy, onExportPng, onExportPdf, onCa
         <button
           onClick={() => onExportPng(payload)}
           disabled={busy}
-          className="flex-1 rounded-xl bg-cyan px-4 py-2.5 font-medium text-white transition-colors hover:bg-cyan-deep disabled:opacity-50"
+          className="flex-1 rounded-xl bg-cyan-deep px-4 py-2.5 font-medium text-white transition-colors hover:bg-ink disabled:opacity-50"
         >
           {busy ? 'Exporting…' : 'Save PNG'}
         </button>

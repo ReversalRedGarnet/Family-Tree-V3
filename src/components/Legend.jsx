@@ -77,7 +77,7 @@ export default function Legend() {
       ))}
       <li className="flex items-center gap-2.5 pt-1">
         <span className="flex h-[18px] w-11 shrink-0 items-end justify-center">
-          <span className="h-2.5 w-9 rounded-sm bg-slate-quiet" />
+          <span className="h-2.5 w-9 rounded-sm bg-mist" />
         </span>
         <span className="text-xs text-mist">Deceased</span>
       </li>

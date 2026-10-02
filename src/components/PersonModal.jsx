@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import Modal from './Modal';
 import Tooltip, { InfoDot } from './Tooltip';
 import {
@@ -9,15 +9,24 @@ import {
   PARENT_TYPES,
   SIBLING_TYPES,
 } from '../utils/constants';
+import { formatName } from '../utils/names';
 
 const field =
-  'w-full rounded-xl border border-hairline bg-white px-3 py-2.5 text-sm text-ink transition-colors placeholder:text-mist/60 focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/30';
+  'w-full rounded-xl border border-hairline bg-white px-3 py-2.5 text-sm text-ink transition-colors placeholder:text-mist focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/30';
 
-function Label({ children, hint }) {
+// Inside a wrapping <label>, pass no htmlFor. A field with a hint must
+// instead pass its input's id as htmlFor: the (i) button then sits beside
+// a real <label>, not inside one, where it would take the field's name.
+function Label({ children, hint, htmlFor }) {
   return (
     <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-mist">
-      {children}
+      {htmlFor ? <label htmlFor={htmlFor}>{children}</label> : children}
       {hint && <InfoDot label={hint} />}
+      {hint && htmlFor && (
+        <span id={`${htmlFor}-hint`} className="sr-only">
+          {hint}
+        </span>
+      )}
     </span>
   );
 }
@@ -64,6 +73,11 @@ function ChoicePair({ options, value, onChange, name }) {
   );
 }
 
+// Long enough for any real name, short enough that a pasted paragraph
+// doesn't become one. The card shows two lines and ends longer names with
+// an ellipsis; the sidebar shows the full name on hover.
+const NAME_MAX_LENGTH = 80;
+
 const LIVING_OPTIONS = [
   { id: 'alive', label: 'Alive' },
   { id: 'deceased', label: 'Deceased' },
@@ -72,9 +86,9 @@ const LIVING_OPTIONS = [
 function labelFor(rel, otherName) {
   if (rel.kind === 'partner') {
     const type = PARTNER_TYPES.find((t) => t.id === rel.type)?.label || 'Partner';
-    return rel.status && rel.status !== 'together'
-      ? `${type} (${rel.status}) · ${otherName}`
-      : `${type} · ${otherName}`;
+    const status = rel.status && rel.status !== 'together' ? ` (${rel.status})` : '';
+    const years = rel.startDate || rel.endDate ? ` ${rel.startDate || '?'}–${rel.endDate || ''}` : '';
+    return `${type}${status}${years} · ${otherName}`;
   }
   if (rel.kind === 'parent') {
     return `${PARENT_TYPES.find((t) => t.id === rel.type)?.label || 'Parent'} · ${otherName}`;
@@ -101,6 +115,21 @@ function YearInput({ value, onChange, placeholder }) {
   );
 }
 
+function formValues(person) {
+  return {
+    firstName: person?.firstName || '',
+    lastName: person?.lastName || '',
+    additionalNames: person?.additionalNames || '',
+    gender: person?.gender || DEFAULT_GENDER,
+    birthYear: person?.birthYear || '',
+    deathYear: person?.deathYear || '',
+    living: person?.living !== false,
+    occupation: person?.occupation || '',
+    notes: person?.notes || '',
+    colorTheme: person?.colorTheme || COLOR_THEMES[0].id,
+  };
+}
+
 export default function PersonModal({
   open,
   mode,
@@ -110,23 +139,36 @@ export default function PersonModal({
   onSave,
   onCancel,
   onRequestDelete,
+  onEditRelationship,
   onDeleteRelationship,
 }) {
   const [form, setForm] = useState({});
+  const additionalNamesId = useId();
+  // What the form was last filled from, to tell the person's own edits
+  // apart from changes made to the record while the form is open.
+  const filledFromRef = useRef(null);
 
   useEffect(() => {
-    if (!open) return;
-    setForm({
-      firstName: initialPerson?.firstName || '',
-      lastName: initialPerson?.lastName || '',
-      additionalNames: initialPerson?.additionalNames || '',
-      gender: initialPerson?.gender || DEFAULT_GENDER,
-      birthYear: initialPerson?.birthYear || '',
-      deathYear: initialPerson?.deathYear || '',
-      living: initialPerson?.living !== false,
-      occupation: initialPerson?.occupation || '',
-      notes: initialPerson?.notes || '',
-      colorTheme: initialPerson?.colorTheme || COLOR_THEMES[0].id,
+    if (!open) {
+      filledFromRef.current = null;
+      return;
+    }
+    const next = { id: initialPerson?.id ?? null, values: formValues(initialPerson) };
+    const previous = filledFromRef.current;
+    filledFromRef.current = next;
+    if (!previous || previous.id !== next.id) {
+      setForm(next.values);
+      return;
+    }
+    // Same person, changed underneath the open form (editing a link here to
+    // "widowed" can mark them as no longer living). Take only the fields
+    // that changed on the record; everything typed so far stays.
+    setForm((f) => {
+      const merged = { ...f };
+      Object.keys(next.values).forEach((key) => {
+        if (next.values[key] !== previous.values[key]) merged[key] = next.values[key];
+      });
+      return merged;
     });
   }, [open, initialPerson]);
 
@@ -158,6 +200,7 @@ export default function PersonModal({
               type="text"
               value={form.firstName || ''}
               placeholder="Amara"
+              maxLength={NAME_MAX_LENGTH}
               onChange={(e) => set('firstName', e.target.value)}
               className={field}
             />
@@ -168,6 +211,7 @@ export default function PersonModal({
               type="text"
               value={form.lastName || ''}
               placeholder="Okafor"
+              maxLength={NAME_MAX_LENGTH}
               onChange={(e) => set('lastName', e.target.value)}
               className={field}
             />
@@ -198,18 +242,24 @@ export default function PersonModal({
       </Zone>
 
       <Zone eyebrow="Additional details">
-        <label className="block">
-          <Label hint="Middle names, a maiden name, a nickname — whatever helps tell them apart.">
+        <div>
+          <Label
+            htmlFor={additionalNamesId}
+            hint="Middle names, a maiden name, a nickname — whatever helps tell them apart."
+          >
             Additional names
           </Label>
           <input
+            id={additionalNamesId}
+            aria-describedby={`${additionalNamesId}-hint`}
             type="text"
             value={form.additionalNames || ''}
             placeholder="Ngozi (née Eze)"
+            maxLength={NAME_MAX_LENGTH}
             onChange={(e) => set('additionalNames', e.target.value)}
             className={field}
           />
-        </label>
+        </div>
 
         <label className="block">
           <Label>Year of birth</Label>
@@ -285,9 +335,7 @@ export default function PersonModal({
               {links.map((rel) => {
                 const otherId = rel.a === initialPerson.id ? rel.b : rel.a;
                 const other = people[otherId];
-                const otherName = other
-                  ? `${other.firstName} ${other.lastName}`.trim() || 'Unnamed'
-                  : 'Someone';
+                const otherName = other ? formatName(other) : 'Someone';
                 const isParentOf = rel.kind === 'parent' && rel.a === initialPerson.id;
                 return (
                   <li
@@ -300,6 +348,16 @@ export default function PersonModal({
                       )}
                       {labelFor(rel, otherName)}
                     </span>
+                    {onEditRelationship && (
+                      <button
+                        type="button"
+                        onClick={() => onEditRelationship(rel.id)}
+                        aria-label={`Edit link: ${labelFor(rel, otherName)}`}
+                        className="shrink-0 rounded-lg px-2 py-1 text-mist transition-colors hover:bg-cyan-wash hover:text-ink"
+                      >
+                        Edit
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => onDeleteRelationship(rel.id)}
@@ -331,8 +389,11 @@ export default function PersonModal({
           Cancel
         </button>
         <button
-          onClick={() => onSave(form)}
-          className="flex-1 rounded-xl bg-cyan px-4 py-2.5 font-medium text-white transition-colors hover:bg-cyan-deep"
+          // The year of death is hidden while they're marked alive. Saving
+          // drops it, rather than keeping a value nobody can see and then
+          // warning about it.
+          onClick={() => onSave(deceased ? form : { ...form, deathYear: '' })}
+          className="flex-1 rounded-xl bg-cyan-deep px-4 py-2.5 font-medium text-white transition-colors hover:bg-ink"
         >
           {mode === 'edit' ? 'Save changes' : 'Add person'}
         </button>

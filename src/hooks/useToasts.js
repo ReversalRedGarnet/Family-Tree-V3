@@ -13,10 +13,12 @@ export function useToasts() {
     }
   }, []);
 
+  // `action` is an optional { label, onClick } shown as a button on the
+  // toast; clicking it also dismisses the toast.
   const push = useCallback(
-    (message, type = 'info', duration = 5000) => {
+    (message, type = 'info', duration = 5000, action = null) => {
       const id = `toast_${toastIdRef.current++}`;
-      setToasts((prev) => [...prev, { id, message, type }]);
+      setToasts((prev) => [...prev, { id, message, type, action }]);
 
       if (duration > 0) {
         timeoutsRef.current[id] = setTimeout(() => dismiss(id), duration);

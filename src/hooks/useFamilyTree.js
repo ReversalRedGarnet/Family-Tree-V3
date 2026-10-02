@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { COLOR_THEMES, DEFAULT_GENDER, MAX_HISTORY, ORIGIN_X } from '../utils/constants';
 import { computeGenerations } from '../utils/generations';
-import { autoLayout, reflowAll, rowY } from '../utils/layout';
+import { autoLayout, reflowAll, rowY, settleDroppedX } from '../utils/layout';
 import { generateId } from '../utils/id';
 import { loadGraph, clearSavedGraph } from '../utils/storage';
 import { applyCommit } from '../utils/history';
@@ -30,6 +30,21 @@ function blankPerson(id, data = {}) {
   };
 }
 
+// A hand drop: the card keeps exactly the x it was dropped at (unless that
+// overlaps someone in its row, in which case only this card is nudged clear
+// -- see settleDroppedX) and always sits on its own generation's row.
+// Returns the same object when nothing would change, so dropping a card
+// back where it already was writes nothing.
+function placeDropped(people, generation, id, x) {
+  const gen = generation[id] ?? 0;
+  const settledX = settleDroppedX(people, generation, id, x);
+  const person = people[id];
+  if (person.placed && person.placedGen === gen && person.position?.x === settledX && person.position?.y === rowY(gen)) {
+    return person;
+  }
+  return { ...person, placed: true, placedGen: gen, position: { x: settledX, y: rowY(gen) } };
+}
+
 export function useFamilyTree() {
   // Read once, at mount -- a ref rather than two separate lazy useState
   // initializers, since loadGraph() itself does real work (a localStorage
@@ -43,15 +58,22 @@ export function useFamilyTree() {
     const loaded = loadedRef.current;
     return {
       past: [],
-      present: loaded ? { people: loaded.people, relationships: loaded.relationships } : EMPTY_GRAPH,
+      present:
+        loaded.status === 'ok' ? { people: loaded.people, relationships: loaded.relationships } : EMPTY_GRAPH,
       future: [],
     };
   });
-  // How many relationships loadGraph() had to drop for pointing at a
-  // person that no longer exists (or never did) -- read once, at mount,
-  // purely so App.jsx can surface a one-time toast; it plays no further
-  // part in the graph itself.
-  const [loadRepairedCount] = useState(() => loadedRef.current?.droppedCount || 0);
+  // How many people/relationships loadGraph() had to drop as unusable --
+  // read once, at mount, purely so App.jsx can surface a one-time toast; it
+  // plays no further part in the graph itself.
+  const [loadRepairedCount] = useState(() => loadedRef.current.droppedCount || 0);
+  // Set when the save in this browser couldn't be used at all (unreadable,
+  // or written by a different version). The board starts empty, and App.jsx
+  // must not autosave over the original until it's safe to -- see there.
+  const [loadIssue] = useState(() => {
+    const { status, raw, backupKey } = loadedRef.current;
+    return status === 'unreadable' || status === 'unsupported-version' ? { status, raw, backupKey } : null;
+  });
   const [selectedIds, setSelectedIds] = useState([]);
 
   const graph = history.present;
@@ -134,43 +156,58 @@ export function useFamilyTree() {
     [commit]
   );
 
+  // Saving the form without changing anything is not an edit, so it costs
+  // no undo step. An empty field and a missing one count as the same.
   const updatePerson = useCallback(
     (id, personData) => {
       commit((g) => {
-        if (!g.people[id]) return g;
-        return { ...g, people: { ...g.people, [id]: { ...g.people[id], ...personData, id } } };
+        const current = g.people[id];
+        if (!current) return g;
+        const changed = Object.keys(personData).some(
+          (key) => key !== 'id' && (current[key] ?? '') !== (personData[key] ?? '')
+        );
+        if (!changed) return g;
+        return { ...g, people: { ...g.people, [id]: { ...current, ...personData, id } } };
       });
     },
     [commit]
   );
 
-  const deletePerson = useCallback(
-    (id) => {
+  // Removes several people and all their links in ONE commit: one undo
+  // brings everyone back, however many were selected. (One commit each
+  // used to push the start state out of the 50-step history past 50.)
+  const deleteMany = useCallback(
+    (ids) => {
+      const doomed = new Set(ids);
       commit((g) => {
-        if (!g.people[id]) return g;
-        const people2 = { ...g.people };
-        delete people2[id];
+        if (![...doomed].some((id) => g.people[id])) return g;
+        const people2 = {};
+        Object.entries(g.people).forEach(([pid, person]) => {
+          if (!doomed.has(pid)) people2[pid] = person;
+        });
         const relationships2 = {};
         Object.entries(g.relationships).forEach(([rid, rel]) => {
-          if (rel.a === id || rel.b === id) return;
+          if (doomed.has(rel.a) || doomed.has(rel.b)) return;
           relationships2[rid] = rel;
         });
         return { people: people2, relationships: relationships2 };
       });
-      setSelectedIds((prev) => prev.filter((sid) => sid !== id));
+      setSelectedIds((prev) => prev.filter((sid) => !doomed.has(sid)));
     },
     [commit]
   );
 
+  const deletePerson = useCallback((id) => deleteMany([id]), [deleteMany]);
+
   const movePerson = useCallback(
-    (id, x, y) => {
+    (id, x) => {
       commit(
         (g) => {
           if (!g.people[id]) return g;
-          return {
-            ...g,
-            people: { ...g.people, [id]: { ...g.people[id], placed: true, position: { x, y } } },
-          };
+          const { generation: gens } = computeGenerations(g.people, g.relationships);
+          const moved = placeDropped(g.people, gens, id, x);
+          if (moved === g.people[id]) return g;
+          return { ...g, people: { ...g.people, [id]: moved } };
         },
         { layout: false }
       );
@@ -179,19 +216,34 @@ export function useFamilyTree() {
   );
 
   // Dragging one card out of a multi-selection moves the whole group —
-  // everyone's relative positions stay exactly as they were, and it's a
-  // single undo step, not one per person.
+  // everyone's relative positions stay as they were (each card only nudged
+  // if it lands on someone outside the group), and it's a single undo step,
+  // not one per person.
   const moveMany = useCallback(
     (positionsById) => {
       commit(
         (g) => {
-          const entries = Object.entries(positionsById).filter(([id]) => g.people[id]);
+          const entries = Object.entries(positionsById)
+            .filter(([id]) => g.people[id])
+            .sort(([, p], [, q]) => p.x - q.x);
           if (!entries.length) return g;
+          const { generation: gens } = computeGenerations(g.people, g.relationships);
+          // Every moved card is put at its new x first, so the group is
+          // checked against its own new positions, never its old ones.
           const people2 = { ...g.people };
           entries.forEach(([id, pos]) => {
-            people2[id] = { ...people2[id], placed: true, position: { x: pos.x, y: pos.y } };
+            people2[id] = { ...people2[id], position: { ...people2[id].position, x: pos.x } };
           });
-          return { ...g, people: people2 };
+          let changed = false;
+          entries.forEach(([id, pos]) => {
+            const moved = placeDropped(people2, gens, id, pos.x);
+            const before = g.people[id];
+            if (moved.position.x !== before.position?.x || moved.position.y !== before.position?.y || !before.placed) {
+              changed = true;
+            }
+            people2[id] = moved;
+          });
+          return changed ? { ...g, people: people2 } : g;
         },
         { layout: false }
       );
@@ -290,6 +342,34 @@ export function useFamilyTree() {
         };
       });
       return relId;
+    },
+    [commit]
+  );
+
+  // Edits an existing link's own details -- a partnership's type, status or
+  // years, a parent or sibling link's type, an "other" link's label. Who it
+  // connects and what kind of link it is never change here (that's a
+  // different link, so delete and re-add). Marking someone deceased for a
+  // "widowed" status lands in the same commit, as addPartnerWithLoss does.
+  // Nothing actually changing costs no undo step.
+  const updateRelationship = useCallback(
+    (id, patch, deceasedId = null) => {
+      commit(
+        (g) => {
+          const rel = g.relationships[id];
+          if (!rel) return g;
+          const next = { ...rel, ...patch, id: rel.id, kind: rel.kind, a: rel.a, b: rel.b };
+          const relChanged = Object.keys(next).some((key) => next[key] !== rel[key]);
+          const markDeceased = Boolean(deceasedId && g.people[deceasedId] && g.people[deceasedId].living !== false);
+          if (!relChanged && !markDeceased) return g;
+          return {
+            people: markDeceased ? { ...g.people, [deceasedId]: { ...g.people[deceasedId], living: false } } : g.people,
+            relationships: relChanged ? { ...g.relationships, [id]: next } : g.relationships,
+          };
+        },
+        // Nothing here changes anyone's generation, so there's nothing to lay out.
+        { layout: false }
+      );
     },
     [commit]
   );
@@ -393,6 +473,7 @@ export function useFamilyTree() {
     people,
     relationships,
     loadRepairedCount,
+    loadIssue,
     selectedIds,
     generation,
     conflicts,
@@ -402,12 +483,14 @@ export function useFamilyTree() {
     addRelative,
     updatePerson,
     deletePerson,
+    deleteMany,
     movePerson,
     moveMany,
     addRelationship,
     addRelationshipBatch,
     addParentLinks,
     addPartnerWithLoss,
+    updateRelationship,
     deleteRelationship,
     tidyRows,
     resetAll,

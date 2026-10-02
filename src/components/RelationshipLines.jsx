@@ -1,9 +1,15 @@
 import { Fragment, useMemo } from 'react';
 import { Circle, Group, Line, Shape, Text } from 'react-konva';
 import { buildConnectors } from '../utils/connectors';
+import { EXPORT_THEMES } from '../utils/constants';
+
+const BOARD = EXPORT_THEMES[0];
+// Wide enough for a typical label ("Godmother", "Best friend"); anything
+// longer ends in an ellipsis instead of being cut off mid-letter.
+const LABEL_WIDTH = 180;
 
 // --- Midpoint markers. These are the vocabulary the legend teaches. ---
-function Marker({ kind, x, y, color }) {
+function Marker({ kind, x, y, color, paper }) {
   switch (kind) {
     case 'ring-filled':
       return (
@@ -14,7 +20,9 @@ function Marker({ kind, x, y, color }) {
       );
     case 'ring-open':
       return (
-        <Circle x={x} y={y} radius={6} fill="#F6FAFB" stroke={color} strokeWidth={2} listening={false} />
+        // Filled with the paper colour, so the ring reads as open on any
+        // export template, not as an off-white disc.
+        <Circle x={x} y={y} radius={6} fill={paper} stroke={color} strokeWidth={2} listening={false} />
       );
     case 'dot':
       return <Circle x={x} y={y} radius={3.5} fill={color} listening={false} />;
@@ -80,14 +88,26 @@ export default function RelationshipLines({
     };
 
     if (connector.kind === 'parent') {
-      // Not clickable: a parent line is shared by a whole sibling set, so
-      // there is no single link for a click to mean. It is still a drop
-      // target — that reads the group as a whole, which is exactly right.
+      // The trunk and bus are shared by a whole sibling set, so a click
+      // there has no single link to mean; they don't listen. Each child's
+      // own drop does: clicking it offers that child's parent links. The
+      // whole group is still one drop target.
       return (
         <Group key={key}>
           {highlight}
           {connector.segments.map((segment, i) => (
             <Line key={`s-${i}`} points={segment} {...stroke} listening={false} />
+          ))}
+          {connector.childLinks.map((link) => (
+            <Line
+              key={`c-${link.childId}`}
+              points={link.segment}
+              stroke="rgba(0,0,0,0)"
+              strokeWidth={style.width}
+              hitStrokeWidth={16}
+              onClick={(e) => onSelect?.(link.relIds, e)}
+              onTap={(e) => onSelect?.(link.relIds, e)}
+            />
           ))}
           {connector.childTops.map((pt, i) => (
             <Circle key={`d-${i}`} x={pt.x} y={pt.y} radius={2.6} fill={style.color} listening={false} />
@@ -104,8 +124,8 @@ export default function RelationshipLines({
           onTap={(e) => onSelect?.(connector.relId, e)}
         >
           {highlight}
-          <Line points={connector.segments[0]} {...stroke} hitStrokeWidth={16} />
-          <Marker {...connector.marker} color={style.color} />
+          <Line points={connector.points} {...stroke} hitStrokeWidth={16} />
+          <Marker {...connector.marker} color={style.color} paper={exportTheme?.background || BOARD.background} />
         </Group>
       );
     }
@@ -150,13 +170,15 @@ export default function RelationshipLines({
           <Fragment>
             <Text
               text={connector.label.text}
-              x={connector.label.x - 60}
+              x={connector.label.x - LABEL_WIDTH / 2}
               y={connector.label.y - 16}
-              width={120}
+              width={LABEL_WIDTH}
+              wrap="none"
+              ellipsis
               align="center"
-              fontFamily={exportTheme?.fontFamily || 'Inter'}
+              fontFamily={exportTheme?.fontFamily || BOARD.fontFamily}
               fontSize={10}
-              fill="#5B7C85"
+              fill="#4E6E77"
               listening={false}
             />
           </Fragment>

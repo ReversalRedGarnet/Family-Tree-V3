@@ -71,7 +71,8 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid #0EA5B7;
+  /* cyan-deep: a focus ring needs 3:1 against the board; bright cyan is 2.8:1. */
+  outline: 2px solid #0B6E7C;
   outline-offset: 2px;
   border-radius: 4px;
 }

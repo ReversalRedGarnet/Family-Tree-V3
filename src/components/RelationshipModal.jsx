@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import Modal from './Modal';
 import { InfoDot } from './Tooltip';
 import { inferSiblingType } from '../utils/generations';
@@ -9,15 +9,24 @@ import {
   SIBLING_TYPES,
   PARENT_TYPES,
 } from '../utils/constants';
+import { formatName } from '../utils/names';
 
 const field =
   'w-full rounded-xl border border-hairline bg-white px-3 py-2.5 text-sm text-ink transition-colors focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/30';
 
-function Label({ children, hint }) {
+// Inside a wrapping <label>, pass no htmlFor. A field with a hint must
+// instead pass its input's id as htmlFor: the (i) button then sits beside
+// a real <label>, not inside one, where it would take the field's name.
+function Label({ children, hint, htmlFor }) {
   return (
     <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-mist">
-      {children}
+      {htmlFor ? <label htmlFor={htmlFor}>{children}</label> : children}
       {hint && <InfoDot label={hint} />}
+      {hint && htmlFor && (
+        <span id={`${htmlFor}-hint`} className="sr-only">
+          {hint}
+        </span>
+      )}
     </span>
   );
 }
@@ -34,7 +43,7 @@ function YearInput({ value, onChange, placeholder, disabled }) {
       placeholder={placeholder}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 4))}
-      className={`${field} disabled:bg-paper disabled:text-mist/50`}
+      className={`${field} disabled:bg-paper disabled:text-mist`}
     />
   );
 }
@@ -42,6 +51,11 @@ function YearInput({ value, onChange, placeholder, disabled }) {
 // One dialog for every kind of link. Nothing here is a prerequisite for
 // anything else — a sibling link doesn't need parents, a child doesn't need
 // a couple.
+//
+// With `editing` set to an existing relationship, the same form edits that
+// link's details instead: its kind and who it connects are fixed (a
+// different kind or direction is a different link), everything else starts
+// from what's recorded.
 export default function RelationshipModal({
   open,
   personA,
@@ -49,6 +63,7 @@ export default function RelationshipModal({
   people,
   relationships = {},
   presetKind = 'partner',
+  editing = null,
   error,
   onConfirm,
   onCancel,
@@ -62,6 +77,7 @@ export default function RelationshipModal({
   const [siblingType, setSiblingType] = useState(SIBLING_TYPES[0].id);
   const [parentType, setParentType] = useState(PARENT_TYPES[0].id);
   const [label, setLabel] = useState('');
+  const fieldId = useId();
   const [deceasedId, setDeceasedId] = useState(null);
 
   // Sibling links are symmetric, so this doesn't depend on the swap toggle.
@@ -73,11 +89,24 @@ export default function RelationshipModal({
   // that reaches the same conclusion must not re-run the reset and wipe
   // whatever the user has already chosen.
   const suggestedSiblingType = siblingSuggestion?.type ?? null;
+  const editingId = editing?.id ?? null;
 
   useEffect(() => {
     if (!open) return;
-    setKind(presetKind);
     setSwapped(false);
+    setDeceasedId(null);
+    if (editing) {
+      setKind(editing.kind);
+      setPartnerType(editing.kind === 'partner' && editing.type ? editing.type : PARTNER_TYPES[0].id);
+      setPartnerStatus(editing.status || PARTNER_STATUS[0].id);
+      setStartDate(editing.startDate || '');
+      setEndDate(editing.endDate || '');
+      setSiblingType(editing.kind === 'sibling' && editing.type ? editing.type : SIBLING_TYPES[0].id);
+      setParentType(editing.kind === 'parent' && editing.type ? editing.type : PARENT_TYPES[0].id);
+      setLabel(editing.label || '');
+      return;
+    }
+    setKind(presetKind);
     setPartnerType(PARTNER_TYPES[0].id);
     setPartnerStatus(PARTNER_STATUS[0].id);
     setStartDate('');
@@ -87,14 +116,16 @@ export default function RelationshipModal({
     setSiblingType(suggestedSiblingType || SIBLING_TYPES[0].id);
     setParentType(PARENT_TYPES[0].id);
     setLabel('');
-    setDeceasedId(null);
-  }, [open, presetKind, suggestedSiblingType]);
+    // Keyed on the edited link's id, not the object: the form is reset once
+    // per link opened, not every time the board re-renders underneath it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, presetKind, suggestedSiblingType, editingId]);
 
   if (!open) return null;
 
   const nameOf = (id) => {
     const p = people[id];
-    return p ? `${p.firstName} ${p.lastName}`.trim() || 'Unnamed' : 'Someone';
+    return p ? formatName(p) : 'Someone';
   };
 
   const a = swapped ? personB : personA;
@@ -128,19 +159,21 @@ export default function RelationshipModal({
   };
 
   return (
-    <Modal open={open} title="How are they related?" onClose={onCancel} size="md">
+    <Modal open={open} title={editing ? 'Edit link' : 'How are they related?'} onClose={onCancel} size="md">
       <div className="mb-4 rounded-xl bg-cyan-wash px-3.5 py-3 text-sm text-ink">
         {kind === 'parent' ? (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="font-medium">{nameOf(a)}</span>
             <span className="text-mist">is the parent of</span>
             <span className="font-medium">{nameOf(b)}</span>
-            <button
-              onClick={() => setSwapped((v) => !v)}
-              className="ml-auto rounded-lg border border-cyan/40 px-2 py-1 text-xs font-medium text-cyan-deep transition-colors hover:bg-white"
-            >
-              Swap
-            </button>
+            {!editing && (
+              <button
+                onClick={() => setSwapped((v) => !v)}
+                className="ml-auto rounded-lg border border-cyan/40 px-2 py-1 text-xs font-medium text-cyan-deep transition-colors hover:bg-white"
+              >
+                Swap
+              </button>
+            )}
           </div>
         ) : (
           <span>
@@ -151,7 +184,7 @@ export default function RelationshipModal({
         )}
       </div>
 
-      <div className="space-y-2">
+      <div className={editing ? 'hidden' : 'space-y-2'}>
         {RELATIONSHIP_KINDS.map((option) => (
           <label
             key={option.id}
@@ -166,7 +199,7 @@ export default function RelationshipModal({
               name="relationship-kind"
               checked={kind === option.id}
               onChange={() => setKind(option.id)}
-              className="mt-0.5 h-4 w-4 accent-[#0EA5B7]"
+              className="mt-0.5 h-4 w-4 accent-[#0B6E7C]"
             />
             <span className="min-w-0">
               <span className="block text-sm font-medium text-ink">{option.label}</span>
@@ -188,16 +221,25 @@ export default function RelationshipModal({
                   ))}
                 </select>
               </label>
-              <label className="block">
-                <Label hint="Changes the line style on the board — divorced lines get a break mark.">
+              <div>
+                <Label
+                  htmlFor={`${fieldId}-status`}
+                  hint="Changes the line style on the board — divorced lines get a break mark."
+                >
                   Status
                 </Label>
-                <select value={partnerStatus} onChange={(e) => setPartnerStatus(e.target.value)} className={field}>
+                <select
+                  id={`${fieldId}-status`}
+                  aria-describedby={`${fieldId}-status-hint`}
+                  value={partnerStatus}
+                  onChange={(e) => setPartnerStatus(e.target.value)}
+                  className={field}
+                >
                   {PARTNER_STATUS.map((s) => (
                     <option key={s.id} value={s.id}>{s.label}</option>
                   ))}
                 </select>
-              </label>
+              </div>
             </div>
             {needsWhoDied && (
               <fieldset className="rounded-xl border border-cyan/40 bg-cyan-wash p-3">
@@ -212,7 +254,7 @@ export default function RelationshipModal({
                         name="who-died"
                         checked={deceasedId === id}
                         onChange={() => setDeceasedId(id)}
-                        className="h-4 w-4 accent-[#0EA5B7]"
+                        className="h-4 w-4 accent-[#0B6E7C]"
                       />
                       <span className="text-sm text-ink">{nameOf(id)}</span>
                     </label>
@@ -250,20 +292,33 @@ export default function RelationshipModal({
         )}
 
         {kind === 'parent' && (
-          <label className="block">
-            <Label hint="Anything other than a birth parent draws as a softer dashed line.">Kind of parent</Label>
-            <select value={parentType} onChange={(e) => setParentType(e.target.value)} className={field}>
+          <div>
+            <Label
+              htmlFor={`${fieldId}-parent-type`}
+              hint="Anything other than a birth parent draws as a softer dashed line."
+            >
+              Kind of parent
+            </Label>
+            <select
+              id={`${fieldId}-parent-type`}
+              aria-describedby={`${fieldId}-parent-type-hint`}
+              value={parentType}
+              onChange={(e) => setParentType(e.target.value)}
+              className={field}
+            >
               {PARENT_TYPES.map((t) => (
                 <option key={t.id} value={t.id}>{t.label}</option>
               ))}
             </select>
-          </label>
+          </div>
         )}
 
         {kind === 'sibling' && (
           <div className="space-y-2">
-            <Label hint="They'll share a row. Parents can be added later, or not at all.">Kind of siblings</Label>
-            <div className="flex gap-2">
+            <Label hint="They'll share a row. Parents can be added later, or not at all.">
+              <span id={`${fieldId}-sibling-type`}>Kind of siblings</span>
+            </Label>
+            <div className="flex gap-2" role="group" aria-labelledby={`${fieldId}-sibling-type`}>
               <button
                 type="button"
                 onClick={() => setSiblingType('full')}
@@ -297,7 +352,12 @@ export default function RelationshipModal({
             </div>
 
             {siblingType !== 'full' && (
-              <select value={siblingType} onChange={(e) => setSiblingType(e.target.value)} className={field}>
+              <select
+                aria-label="Kind of siblings"
+                value={siblingType}
+                onChange={(e) => setSiblingType(e.target.value)}
+                className={field}
+              >
                 {SIBLING_TYPES.filter((t) => t.id !== 'full').map((t) => (
                   <option key={t.id} value={t.id}>{t.label}</option>
                 ))}
@@ -346,9 +406,9 @@ export default function RelationshipModal({
           onClick={submit}
           disabled={blocked}
           title={blocked ? 'Choose which of them has passed away first' : undefined}
-          className="flex-1 rounded-xl bg-cyan px-4 py-2.5 font-medium text-white transition-colors hover:bg-cyan-deep disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex-1 rounded-xl bg-cyan-deep px-4 py-2.5 font-medium text-white transition-colors hover:bg-ink disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Link them
+          {editing ? 'Save changes' : 'Link them'}
         </button>
       </div>
     </Modal>
