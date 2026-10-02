@@ -203,18 +203,30 @@ export default function App() {
     [people]
   );
 
-  const requestDeletePerson = useCallback(
-    (id) => {
-      const person = people[id];
-      if (!person) return;
-      const { linkCount, childCount } = describeDeleteImpact(id, people, relationships);
+  // "N links will be removed. M children stay on the board…", for one
+  // person or several.
+  const deleteImpactText = useCallback(
+    (ids, plural) => {
+      const { linkCount, childCount } = describeDeleteImpact(ids, people, relationships);
       const details = [];
       if (linkCount) details.push(`${linkCount} link${linkCount > 1 ? 's' : ''} will be removed.`);
       if (childCount) {
         details.push(
-          `${childCount} ${childCount > 1 ? 'children stay' : 'child stays'} on the board, just without this parent.`
+          `${childCount} ${childCount > 1 ? 'children stay' : 'child stays'} on the board, just without ${
+            plural ? 'these parents' : 'this parent'
+          }.`
         );
       }
+      return details;
+    },
+    [people, relationships]
+  );
+
+  const requestDeletePerson = useCallback(
+    (id) => {
+      const person = people[id];
+      if (!person) return;
+      const details = deleteImpactText([id], false);
       askConfirm({
         title: `Delete ${nameOf(id)}?`,
         message: details.join('\n\n') || 'They have no links, so nothing else changes.',
@@ -227,7 +239,7 @@ export default function App() {
         },
       });
     },
-    [people, relationships, tree, pushToast, nameOf]
+    [people, tree, pushToast, nameOf, deleteImpactText]
   );
 
   const requestDeleteSelected = useCallback(() => {
@@ -236,17 +248,20 @@ export default function App() {
       requestDeletePerson(selectedIds[0]);
       return;
     }
+    const ids = [...selectedIds];
     askConfirm({
-      title: `Delete ${selectedIds.length} people?`,
-      message: `This removes ${selectedIds.map(nameOf).join(', ')} and every link they have.`,
+      title: `Delete ${ids.length} people?`,
+      message: [`This removes ${ids.map(nameOf).join(', ')}.`, ...deleteImpactText(ids, true)].join('\n\n'),
       danger: true,
       confirmLabel: 'Delete all',
       onConfirm: () => {
-        selectedIds.forEach((id) => tree.deletePerson(id));
-        pushToast('Deleted.', 'success', 3000);
+        // One commit, so one Undo brings them all back.
+        tree.deleteMany(ids);
+        setPersonModal((pm) => (ids.includes(pm.editingId) ? CLOSED_PERSON : pm));
+        pushToast(`${ids.length} people deleted. Undo brings them all back.`, 'success', 4000);
       },
     });
-  }, [selectedIds, tree, pushToast, requestDeletePerson, nameOf]);
+  }, [selectedIds, tree, pushToast, requestDeletePerson, nameOf, askConfirm, deleteImpactText]);
 
   // The actual write, once any duplicate question has been settled.
   const commitPersonSave = useCallback(

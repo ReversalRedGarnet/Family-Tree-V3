@@ -87,6 +87,29 @@ describe('editing a link from the person form (F1, F2)', () => {
     expect(screen.getByLabelText('Additional names').maxLength).toBe(80);
   });
 
+  it('a hidden year of death is dropped when saving someone marked alive (L5)', () => {
+    const onSave = vi.fn();
+    render(h(PersonModal, { open: true, mode: 'add', people: {}, onSave, onCancel: () => {} }));
+    fireEvent.change(screen.getByPlaceholderText('Amara'), { target: { value: 'Dot' } });
+    fireEvent.click(screen.getByRole('radio', { name: 'Deceased' }));
+    fireEvent.change(screen.getByPlaceholderText('2011'), { target: { value: '1999' } });
+    fireEvent.click(screen.getByRole('radio', { name: 'Alive' }));
+    expect(screen.queryByPlaceholderText('2011')).toBe(null);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add person' }));
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ living: true, deathYear: '' }));
+  });
+
+  it('a deceased person keeps their year of death on save (L5)', () => {
+    const onSave = vi.fn();
+    render(h(PersonModal, { open: true, mode: 'add', people: {}, onSave, onCancel: () => {} }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Deceased' }));
+    fireEvent.change(screen.getByPlaceholderText('2011'), { target: { value: '1999' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add person' }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ living: false, deathYear: '1999' }));
+  });
+
   it('opening the form for a different person starts fresh', () => {
     const { rerender } = render(h(Board, { onEditRelationship: () => {} }));
     fireEvent.change(occupation(), { target: { value: 'Pilot' } });

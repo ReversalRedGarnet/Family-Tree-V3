@@ -168,6 +168,19 @@ describe('describeDeleteImpact', () => {
     expect(result.linkCount).toBe(3);
     expect(result.childCount).toBe(2);
   });
+
+  it('for several people: links counted once, and only children who stay behind (M7)', () => {
+    const relationships = {
+      r1: { kind: 'partner', a: 'a', b: 'b' },
+      r2: { kind: 'parent', a: 'a', b: 'kid' },
+      r3: { kind: 'parent', a: 'b', b: 'kid' },
+      r4: { kind: 'parent', a: 'a', b: 'b2' }, // b2 is deleted too, so doesn't "stay"
+      r5: { kind: 'sibling', a: 'kid', b: 'other' }, // untouched
+    };
+    const result = describeDeleteImpact(['a', 'b', 'b2'], {}, relationships);
+    expect(result.linkCount).toBe(4);
+    expect(result.childCount).toBe(1);
+  });
 });
 
 describe('validateRelationship: generation consistency', () => {

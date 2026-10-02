@@ -156,33 +156,48 @@ export function useFamilyTree() {
     [commit]
   );
 
+  // Saving the form without changing anything is not an edit, so it costs
+  // no undo step. An empty field and a missing one count as the same.
   const updatePerson = useCallback(
     (id, personData) => {
       commit((g) => {
-        if (!g.people[id]) return g;
-        return { ...g, people: { ...g.people, [id]: { ...g.people[id], ...personData, id } } };
+        const current = g.people[id];
+        if (!current) return g;
+        const changed = Object.keys(personData).some(
+          (key) => key !== 'id' && (current[key] ?? '') !== (personData[key] ?? '')
+        );
+        if (!changed) return g;
+        return { ...g, people: { ...g.people, [id]: { ...current, ...personData, id } } };
       });
     },
     [commit]
   );
 
-  const deletePerson = useCallback(
-    (id) => {
+  // Removes several people and all their links in ONE commit: one undo
+  // brings everyone back, however many were selected. (One commit each
+  // used to push the start state out of the 50-step history past 50.)
+  const deleteMany = useCallback(
+    (ids) => {
+      const doomed = new Set(ids);
       commit((g) => {
-        if (!g.people[id]) return g;
-        const people2 = { ...g.people };
-        delete people2[id];
+        if (![...doomed].some((id) => g.people[id])) return g;
+        const people2 = {};
+        Object.entries(g.people).forEach(([pid, person]) => {
+          if (!doomed.has(pid)) people2[pid] = person;
+        });
         const relationships2 = {};
         Object.entries(g.relationships).forEach(([rid, rel]) => {
-          if (rel.a === id || rel.b === id) return;
+          if (doomed.has(rel.a) || doomed.has(rel.b)) return;
           relationships2[rid] = rel;
         });
         return { people: people2, relationships: relationships2 };
       });
-      setSelectedIds((prev) => prev.filter((sid) => sid !== id));
+      setSelectedIds((prev) => prev.filter((sid) => !doomed.has(sid)));
     },
     [commit]
   );
+
+  const deletePerson = useCallback((id) => deleteMany([id]), [deleteMany]);
 
   const movePerson = useCallback(
     (id, x) => {
@@ -468,6 +483,7 @@ export function useFamilyTree() {
     addRelative,
     updatePerson,
     deletePerson,
+    deleteMany,
     movePerson,
     moveMany,
     addRelationship,

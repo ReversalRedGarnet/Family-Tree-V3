@@ -21,7 +21,7 @@ import {
 } from '../utils/constants';
 import { buildConnectors, findConnectorAt } from '../utils/connectors';
 import { formatName } from '../utils/names';
-import { clampScale, fitScale, minScaleFor } from '../utils/viewport';
+import { clampScale, fitScale, minScaleFor, wheelAction } from '../utils/viewport';
 
 const PAD = 140;
 
@@ -258,9 +258,15 @@ const Canvas = forwardRef(function Canvas(
   const handleWheel = useCallback(
     (e) => {
       e.evt.preventDefault();
+      const action = wheelAction(e.evt);
+      if (!action) return;
+      if (action.type === 'pan') {
+        setView((v) => ({ ...v, x: v.x + action.dx, y: v.y + action.dy }));
+        return;
+      }
       const pointer = stageRef.current?.getPointerPosition();
       if (!pointer) return;
-      zoomAround(e.evt.deltaY > 0 ? 1 / 1.09 : 1.09, pointer.x, pointer.y);
+      zoomAround(action.factor, pointer.x, pointer.y);
     },
     [zoomAround]
   );

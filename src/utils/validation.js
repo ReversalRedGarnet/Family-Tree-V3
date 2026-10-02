@@ -153,12 +153,16 @@ function generationConflictMessage(kind, offset, aName, bName) {
   return `${where}, so they can't be ${kind === 'partner' ? 'partners' : 'siblings'}.`;
 }
 
-export function describeDeleteImpact(personId, people, relationships) {
-  const links = Object.values(relationships).filter(
-    (rel) => rel.a === personId || rel.b === personId
+// What deleting one person, or several at once, takes with it: every link
+// touching any of them, and the children who stay behind (a child who is
+// also being deleted isn't "staying on the board").
+export function describeDeleteImpact(personIdOrIds, people, relationships) {
+  const ids = new Set([personIdOrIds].flat());
+  const links = Object.values(relationships).filter((rel) => ids.has(rel.a) || ids.has(rel.b));
+  const children = new Set(
+    links.filter((rel) => rel.kind === 'parent' && ids.has(rel.a) && !ids.has(rel.b)).map((rel) => rel.b)
   );
-  const children = links.filter((rel) => rel.kind === 'parent' && rel.a === personId).length;
-  return { linkCount: links.length, childCount: children };
+  return { linkCount: links.length, childCount: children.size };
 }
 
 // ---- Duplicate detection ----

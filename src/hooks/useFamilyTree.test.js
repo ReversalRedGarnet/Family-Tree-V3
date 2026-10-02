@@ -127,3 +127,70 @@ describe('useFamilyTree drops', () => {
     expect(result.current.relationships[relId]).toBeUndefined();
   });
 });
+
+describe('undo hygiene (M7, L6)', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('saving a person unchanged adds no undo step', () => {
+    const { result, a, relId } = setup();
+    const ann = result.current.people[a];
+    act(() => {
+      result.current.updatePerson(a, { firstName: ann.firstName, lastName: '', notes: undefined });
+    });
+    // The next undo takes back the last real change (the marriage), not a no-op save.
+    act(() => {
+      result.current.undo();
+    });
+    expect(result.current.relationships[relId]).toBeUndefined();
+  });
+
+  it('a real edit is still one undo step', () => {
+    const { result, a } = setup();
+    act(() => {
+      result.current.updatePerson(a, { occupation: 'Pilot' });
+    });
+    expect(result.current.people[a].occupation).toBe('Pilot');
+    act(() => {
+      result.current.undo();
+    });
+    expect(result.current.people[a].occupation ?? '').toBe('');
+  });
+
+  it('deleting many people is one commit, so one undo restores them all, even past 50', () => {
+    const { result } = renderHook(() => useFamilyTree());
+    const ids = [];
+    for (let i = 0; i < 60; i += 1) {
+      act(() => {
+        ids.push(result.current.addRelative({ firstName: `P${i}` }));
+      });
+    }
+    act(() => {
+      result.current.selectMany(ids);
+    });
+    act(() => {
+      result.current.deleteMany(ids);
+    });
+    expect(Object.keys(result.current.people)).toHaveLength(0);
+    expect(result.current.selectedIds).toEqual([]);
+
+    act(() => {
+      result.current.undo();
+    });
+    expect(Object.keys(result.current.people)).toHaveLength(60);
+  });
+
+  it('deleteMany removes every link touching the deleted people', () => {
+    const { result, a, b } = setup();
+    let c;
+    act(() => {
+      c = result.current.addRelative({ firstName: 'Cy' }, (id) => [{ kind: 'parent', a, b: id }]);
+    });
+    act(() => {
+      result.current.deleteMany([a, b]);
+    });
+    expect(Object.keys(result.current.people)).toEqual([c]);
+    expect(result.current.relationships).toEqual({});
+  });
+});

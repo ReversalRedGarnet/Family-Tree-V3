@@ -389,7 +389,10 @@ export default function PersonModal({
           Cancel
         </button>
         <button
-          onClick={() => onSave(form)}
+          // The year of death is hidden while they're marked alive. Saving
+          // drops it, rather than keeping a value nobody can see and then
+          // warning about it.
+          onClick={() => onSave(deceased ? form : { ...form, deathYear: '' })}
           className="flex-1 rounded-xl bg-cyan-deep px-4 py-2.5 font-medium text-white transition-colors hover:bg-ink"
         >
           {mode === 'edit' ? 'Save changes' : 'Add person'}
