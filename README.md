@@ -93,7 +93,8 @@ the included workflow, `.github/workflows/deploy.yml`.
 
 What the workflow does:
 - On every pull request into `main`, and every push to `main`, it installs
-  dependencies, runs the tests, then builds. A failing test stops it.
+  dependencies, runs ESLint (`npm run lint`), runs the tests, then builds. A
+  lint error or a failing test stops it.
 - Only a push to `main` deploys. A pull request never publishes anything.
 - It works out the base path from the repo name, so nothing needs editing: a
   project site is built for `/<repo-name>/`, and a user or organisation site
@@ -237,6 +238,9 @@ layout**, or a new link that changes their generation.
 
 - **Pan:** two-finger scroll on a trackpad (up/down and sideways), the middle
   mouse button, Space + drag, or one finger on empty board on a touch screen.
+  Space + drag works while the board has focus or nothing does; while a
+  button or other control has focus, Space presses that instead, so click
+  the board first.
 - **Zoom:** the mouse wheel, a trackpad pinch, a two-finger pinch on touch,
   or the − / + buttons. One mouse-wheel notch is about 10%.
 - **Fit everyone on screen** (⤢). Zooming out stops at 30%, or further out
