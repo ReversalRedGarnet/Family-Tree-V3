@@ -574,28 +574,41 @@ export default function App() {
     [pushToast, nameOf]
   );
 
+  // A click on a line. Most lines are one link; a child's drop from a
+  // parent line carries every parent link that child has (one per parent),
+  // so it arrives as a list and each link gets its own named items.
   const handleRelationshipClick = useCallback(
-    (relId, e) => {
-      const rel = relationships[relId];
-      if (!rel) return;
+    (relIdOrIds, e) => {
+      const rels = [relIdOrIds].flat().map((id) => relationships[id]).filter(Boolean);
+      if (!rels.length) return;
       e.cancelBubble = true;
-      setContextMenu({
-        open: true,
-        x: e.evt.clientX,
-        y: e.evt.clientY,
-        items: [
-          { label: 'Edit link…', onSelect: () => openEditLink(relId) },
-          {
-            label: 'Remove this link',
-            danger: true,
-            hint: `${nameOf(rel.a)} and ${nameOf(rel.b)} both stay on the board.`,
-            onSelect: () => {
-              tree.deleteRelationship(relId);
-              pushToast('Link removed.', 'success', 2200);
-            },
-          },
-        ],
-      });
+      const remove = (rel) => () => {
+        tree.deleteRelationship(rel.id);
+        pushToast('Link removed.', 'success', 2200);
+      };
+      const items =
+        rels.length === 1
+          ? [
+              { label: 'Edit link…', onSelect: () => openEditLink(rels[0].id) },
+              {
+                label: 'Remove this link',
+                danger: true,
+                hint: `${nameOf(rels[0].a)} and ${nameOf(rels[0].b)} both stay on the board.`,
+                onSelect: remove(rels[0]),
+              },
+            ]
+          : [
+              ...rels.map((rel) => ({
+                label: `Edit ${nameOf(rel.a)} as ${nameOf(rel.b)}'s parent…`,
+                onSelect: () => openEditLink(rel.id),
+              })),
+              ...rels.map((rel) => ({
+                label: `Remove ${nameOf(rel.a)} as ${nameOf(rel.b)}'s parent`,
+                danger: true,
+                onSelect: remove(rel),
+              })),
+            ];
+      setContextMenu({ open: true, x: e.evt.clientX, y: e.evt.clientY, items });
     },
     [relationships, tree, pushToast, nameOf, openEditLink]
   );
@@ -862,6 +875,7 @@ export default function App() {
         onRequestDelete={
           personModal.mode === 'edit' ? () => requestDeletePerson(personModal.editingId) : undefined
         }
+        onEditRelationship={openEditLink}
         onDeleteRelationship={(relId) => {
           tree.deleteRelationship(relId);
           pushToast('Link removed.', 'success', 2200);

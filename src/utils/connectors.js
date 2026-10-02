@@ -47,9 +47,10 @@ function parentConnectors(rels, positions) {
     const soft = childRels.some((r) => r.type && r.type !== 'birth');
     const parentIds = childRels.map((r) => r.a).sort();
     const key = `${parentIds.join('|')}::${soft ? 'soft' : 'birth'}`;
-    if (!groups.has(key)) groups.set(key, { parentIds, soft, childIds: [], relIds: [] });
+    if (!groups.has(key)) groups.set(key, { parentIds, soft, childIds: [], relIds: [], relsByChild: {} });
     groups.get(key).childIds.push(childId);
     groups.get(key).relIds.push(...childRels.map((r) => r.id));
+    groups.get(key).relsByChild[childId] = childRels.map((r) => r.id);
   });
 
   const out = [];
@@ -81,6 +82,16 @@ function parentConnectors(rels, positions) {
       segments,
       childTops: childPts.map((pt) => ({ x: pt.x, y: pt.y - HALF_H })),
       relIds: group.relIds,
+      // Each child's own drop from the bus. Unlike the shared trunk and bus,
+      // it stands for exactly that child's parent links, so it is the part
+      // of the line a click can mean something on.
+      childLinks: group.childIds
+        .filter((id) => positions[id])
+        .map((id) => ({
+          childId: id,
+          relIds: group.relsByChild[id],
+          segment: [positions[id].x, busY, positions[id].x, positions[id].y - HALF_H],
+        })),
       // Dropping here means "another child for these parents".
       droppable: true,
       parentIds: group.parentIds,

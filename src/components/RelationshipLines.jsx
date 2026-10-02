@@ -80,14 +80,26 @@ export default function RelationshipLines({
     };
 
     if (connector.kind === 'parent') {
-      // Not clickable: a parent line is shared by a whole sibling set, so
-      // there is no single link for a click to mean. It is still a drop
-      // target — that reads the group as a whole, which is exactly right.
+      // The trunk and bus are shared by a whole sibling set, so a click
+      // there has no single link to mean; they don't listen. Each child's
+      // own drop does: clicking it offers that child's parent links. The
+      // whole group is still one drop target.
       return (
         <Group key={key}>
           {highlight}
           {connector.segments.map((segment, i) => (
             <Line key={`s-${i}`} points={segment} {...stroke} listening={false} />
+          ))}
+          {connector.childLinks.map((link) => (
+            <Line
+              key={`c-${link.childId}`}
+              points={link.segment}
+              stroke="rgba(0,0,0,0)"
+              strokeWidth={style.width}
+              hitStrokeWidth={16}
+              onClick={(e) => onSelect?.(link.relIds, e)}
+              onTap={(e) => onSelect?.(link.relIds, e)}
+            />
           ))}
           {connector.childTops.map((pt, i) => (
             <Circle key={`d-${i}`} x={pt.x} y={pt.y} radius={2.6} fill={style.color} listening={false} />

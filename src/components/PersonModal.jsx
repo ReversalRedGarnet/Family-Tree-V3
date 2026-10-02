@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import Modal from './Modal';
 import Tooltip, { InfoDot } from './Tooltip';
 import {
@@ -110,6 +110,21 @@ function YearInput({ value, onChange, placeholder }) {
   );
 }
 
+function formValues(person) {
+  return {
+    firstName: person?.firstName || '',
+    lastName: person?.lastName || '',
+    additionalNames: person?.additionalNames || '',
+    gender: person?.gender || DEFAULT_GENDER,
+    birthYear: person?.birthYear || '',
+    deathYear: person?.deathYear || '',
+    living: person?.living !== false,
+    occupation: person?.occupation || '',
+    notes: person?.notes || '',
+    colorTheme: person?.colorTheme || COLOR_THEMES[0].id,
+  };
+}
+
 export default function PersonModal({
   open,
   mode,
@@ -119,24 +134,36 @@ export default function PersonModal({
   onSave,
   onCancel,
   onRequestDelete,
+  onEditRelationship,
   onDeleteRelationship,
 }) {
   const [form, setForm] = useState({});
   const additionalNamesId = useId();
+  // What the form was last filled from, to tell the person's own edits
+  // apart from changes made to the record while the form is open.
+  const filledFromRef = useRef(null);
 
   useEffect(() => {
-    if (!open) return;
-    setForm({
-      firstName: initialPerson?.firstName || '',
-      lastName: initialPerson?.lastName || '',
-      additionalNames: initialPerson?.additionalNames || '',
-      gender: initialPerson?.gender || DEFAULT_GENDER,
-      birthYear: initialPerson?.birthYear || '',
-      deathYear: initialPerson?.deathYear || '',
-      living: initialPerson?.living !== false,
-      occupation: initialPerson?.occupation || '',
-      notes: initialPerson?.notes || '',
-      colorTheme: initialPerson?.colorTheme || COLOR_THEMES[0].id,
+    if (!open) {
+      filledFromRef.current = null;
+      return;
+    }
+    const next = { id: initialPerson?.id ?? null, values: formValues(initialPerson) };
+    const previous = filledFromRef.current;
+    filledFromRef.current = next;
+    if (!previous || previous.id !== next.id) {
+      setForm(next.values);
+      return;
+    }
+    // Same person, changed underneath the open form (editing a link here to
+    // "widowed" can mark them as no longer living). Take only the fields
+    // that changed on the record; everything typed so far stays.
+    setForm((f) => {
+      const merged = { ...f };
+      Object.keys(next.values).forEach((key) => {
+        if (next.values[key] !== previous.values[key]) merged[key] = next.values[key];
+      });
+      return merged;
     });
   }, [open, initialPerson]);
 
@@ -313,6 +340,16 @@ export default function PersonModal({
                       )}
                       {labelFor(rel, otherName)}
                     </span>
+                    {onEditRelationship && (
+                      <button
+                        type="button"
+                        onClick={() => onEditRelationship(rel.id)}
+                        aria-label={`Edit link: ${labelFor(rel, otherName)}`}
+                        className="shrink-0 rounded-lg px-2 py-1 text-mist transition-colors hover:bg-cyan-wash hover:text-ink"
+                      >
+                        Edit
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => onDeleteRelationship(rel.id)}
