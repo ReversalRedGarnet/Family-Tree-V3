@@ -41,6 +41,7 @@ import {
 } from '../utils/boardNav';
 import { openModalCount } from './Modal';
 import { createLongPress } from '../utils/longPress';
+import { movedPast, pressMode } from '../utils/boardPointer';
 
 // A touch-originated drag needs the wider, touch-tuned tolerances; a
 // mouse-originated one keeps the tighter mouse ones. Checked once, at the
@@ -170,11 +171,9 @@ const Canvas = forwardRef(function Canvas(
   // to do this for us, but plain left-drag on empty canvas is now the
   // marquee gesture below, so panning is done by hand instead.
   const panRef = useRef(null);
-  // A candidate marquee: set on mousedown over empty canvas, promoted to an
-  // actual visible rectangle (marqueeRect state) only once the pointer has
-  // moved past a small threshold — so a plain click still reads as a click.
-  const marqueeStartRef = useRef(null);
-  const marqueeActiveRef = useRef(false);
+  // A primary-button press on empty board, until it's clear whether it's a
+  // click, a pan or a selection box (see utils/boardPointer.js).
+  const boardPressRef = useRef(null);
   const marqueeRectRef = useRef(null);
   // Set for the duration of a drag that moves a whole multi-selection: the
   // card actually being dragged, its position when the drag started, and
@@ -191,7 +190,8 @@ const Canvas = forwardRef(function Canvas(
   const [hoverConnectorKey, setHoverConnectorKey] = useState(null);
   const [touchDrag, setTouchDrag] = useState(false);
   const [marqueeRect, setMarqueeRect] = useState(null);
-  const [spaceHeld, setSpaceHeld] = useState(false);
+  // A mouse pan is in progress (any button): the cursor shows a closed hand.
+  const [grabbing, setGrabbing] = useState(false);
   // Keyboard: the person the keys act on, and whether the keyboard is in
   // use right now. The ring is only drawn while it is, so a mouse user
   // never sees it.
@@ -224,14 +224,12 @@ const Canvas = forwardRef(function Canvas(
       if (spacePansBoard(active, containerRef.current, document.body)) e.preventDefault();
       spaceRef.current = true;
       pannedWhileSpaceRef.current = false;
-      setSpaceHeld(true);
     };
     const onKeyUp = (e) => {
       if (e.code !== 'Space') return;
       if (spaceRef.current && pannedWhileSpaceRef.current) e.preventDefault();
       spaceRef.current = false;
       pannedWhileSpaceRef.current = false;
-      setSpaceHeld(false);
     };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
@@ -499,7 +497,12 @@ const Canvas = forwardRef(function Canvas(
     }
   }, [releaseHeldCard]);
 
-  // ---- Mouse: pan (middle-button or space+drag) and marquee select ----
+  // ---- Mouse: pan and selection box ----
+  //
+  // On empty board a primary-button drag pans and Shift + drag draws a
+  // selection box; which one is fixed when the button goes down. A press
+  // that never moves past MARQUEE_THRESHOLD is a click. The middle button,
+  // and Space + drag, always pan.
 
   const handlePanMouseMove = useCallback((e) => {
     const pan = panRef.current;
@@ -515,6 +518,7 @@ const Canvas = forwardRef(function Canvas(
     panRef.current = null;
     window.removeEventListener('mousemove', handlePanMouseMove);
     window.removeEventListener('mouseup', handlePanMouseUp);
+    setGrabbing(false);
     if (!pan) return;
     setView((v) => ({
       ...v,
@@ -522,10 +526,6 @@ const Canvas = forwardRef(function Canvas(
       y: pan.startY + (e.clientY - pan.startClientY),
     }));
   }, [handlePanMouseMove]);
-
-  // Below MARQUEE_THRESHOLD of movement, a mousedown on the empty board
-  // reads as a plain click (which Konva's own click handling already treats
-  // as "deselect everyone", the same as it always has).
 
   const finishMarqueeSelection = useCallback(
     (rect) => {
@@ -550,45 +550,73 @@ const Canvas = forwardRef(function Canvas(
     [people, onSelectMany]
   );
 
-  const handleMarqueeMouseMove = useCallback((e) => {
-    const start = marqueeStartRef.current;
-    const box = containerRef.current?.getBoundingClientRect();
-    if (!start || !box) return;
-
-    if (!marqueeActiveRef.current) {
-      const moved = Math.hypot(e.clientX - start.clientX, e.clientY - start.clientY);
-      if (moved < MARQUEE_THRESHOLD) return;
-      marqueeActiveRef.current = true;
+  const handleBoardPressMove = useCallback((e) => {
+    const press = boardPressRef.current;
+    if (!press) return;
+    const point = { x: e.clientX, y: e.clientY };
+    if (!press.moved) {
+      if (!movedPast(press.start, point, MARQUEE_THRESHOLD)) return;
+      press.moved = true;
+      if (press.mode === 'pan') setGrabbing(true);
     }
 
+    if (press.mode === 'pan') {
+      const stage = stageRef.current;
+      if (!stage) return;
+      stage.x(press.startView.x + (point.x - press.start.x));
+      stage.y(press.startView.y + (point.y - press.start.y));
+      stage.batchDraw();
+      return;
+    }
+
+    const box = containerRef.current?.getBoundingClientRect();
+    if (!box) return;
     const v = viewRef.current;
     const rect = {
-      x0: (start.clientX - box.left - v.x) / v.scale,
-      y0: (start.clientY - box.top - v.y) / v.scale,
-      x1: (e.clientX - box.left - v.x) / v.scale,
-      y1: (e.clientY - box.top - v.y) / v.scale,
+      x0: (press.start.x - box.left - v.x) / v.scale,
+      y0: (press.start.y - box.top - v.y) / v.scale,
+      x1: (point.x - box.left - v.x) / v.scale,
+      y1: (point.y - box.top - v.y) / v.scale,
     };
     marqueeRectRef.current = rect;
     setMarqueeRect(rect);
   }, []);
 
-  const handleMarqueeMouseUp = useCallback(() => {
-    window.removeEventListener('mousemove', handleMarqueeMouseMove);
-    window.removeEventListener('mouseup', handleMarqueeMouseUp);
-    marqueeStartRef.current = null;
-    if (!marqueeActiveRef.current) return;
-    marqueeActiveRef.current = false;
-    // Read the last rect from the ref rather than a setState functional
-    // updater — calling another component's setState (onSelectMany, which
-    // ultimately updates App's selection state) from inside a React state
-    // updater runs during React's render work and trips its "cannot update
-    // a component while rendering a different one" guard. A plain event
-    // handler doing the same thing is exactly what event handlers are for.
-    const rect = marqueeRectRef.current;
-    marqueeRectRef.current = null;
-    setMarqueeRect(null);
-    if (rect) finishMarqueeSelection(rect);
-  }, [finishMarqueeSelection, handleMarqueeMouseMove]);
+  const handleBoardPressUp = useCallback(
+    (e) => {
+      window.removeEventListener('mousemove', handleBoardPressMove);
+      window.removeEventListener('mouseup', handleBoardPressUp);
+      const press = boardPressRef.current;
+      boardPressRef.current = null;
+      if (!press) return;
+
+      if (!press.moved) {
+        // A click on empty board clears the selection, as it always has.
+        onSelect(null);
+        return;
+      }
+
+      if (press.mode === 'pan') {
+        setGrabbing(false);
+        setView((v) => ({
+          ...v,
+          x: press.startView.x + (e.clientX - press.start.x),
+          y: press.startView.y + (e.clientY - press.start.y),
+        }));
+        return;
+      }
+
+      // Read the last rect from the ref rather than a setState functional
+      // updater: calling another component's setState (onSelectMany) from
+      // inside a state updater trips React's "cannot update a component
+      // while rendering a different one" guard.
+      const rect = marqueeRectRef.current;
+      marqueeRectRef.current = null;
+      setMarqueeRect(null);
+      if (rect) finishMarqueeSelection(rect);
+    },
+    [handleBoardPressMove, finishMarqueeSelection, onSelect]
+  );
 
   const handleStageMouseDown = useCallback(
     (e) => {
@@ -605,18 +633,23 @@ const Canvas = forwardRef(function Canvas(
           startX: viewRef.current.x,
           startY: viewRef.current.y,
         };
+        setGrabbing(true);
         window.addEventListener('mousemove', handlePanMouseMove);
         window.addEventListener('mouseup', handlePanMouseUp);
         return;
       }
 
       if (e.evt.button !== 0) return;
-      marqueeStartRef.current = { clientX: e.evt.clientX, clientY: e.evt.clientY };
-      marqueeActiveRef.current = false;
-      window.addEventListener('mousemove', handleMarqueeMouseMove);
-      window.addEventListener('mouseup', handleMarqueeMouseUp);
+      boardPressRef.current = {
+        start: { x: e.evt.clientX, y: e.evt.clientY },
+        startView: { x: viewRef.current.x, y: viewRef.current.y },
+        mode: pressMode({ shiftKey: e.evt.shiftKey }),
+        moved: false,
+      };
+      window.addEventListener('mousemove', handleBoardPressMove);
+      window.addEventListener('mouseup', handleBoardPressUp);
     },
-    [handlePanMouseMove, handlePanMouseUp, handleMarqueeMouseMove, handleMarqueeMouseUp]
+    [handlePanMouseMove, handlePanMouseUp, handleBoardPressMove, handleBoardPressUp]
   );
 
   // ---- Drag to connect ----
@@ -887,9 +920,13 @@ const Canvas = forwardRef(function Canvas(
 
   // ---- Stage-level events ----
 
+  // A primary-button mouse click on empty board is decided by the press
+  // handlers above (Konva calls it a click even after the mouse has moved).
+  // A tap, and a click with any other button, still clear the selection here.
   const handleStageClick = useCallback(
     (e) => {
       if (endsLongPress(e, longPressRef.current)) return;
+      if (e.evt?.type?.startsWith('mouse') && e.evt.button === 0) return;
       if (e.target === e.target.getStage()) onSelect(null);
     },
     [onSelect]
@@ -1132,7 +1169,7 @@ const Canvas = forwardRef(function Canvas(
     <div
       ref={containerRef}
       className="board-surface relative h-full w-full touch-none overflow-hidden"
-      style={spaceHeld ? { cursor: 'grab' } : undefined}
+      style={{ cursor: grabbing ? 'grabbing' : 'grab' }}
       tabIndex={0}
       role="application"
       aria-label="Family tree board"
@@ -1279,7 +1316,7 @@ const Canvas = forwardRef(function Canvas(
 
       {isEmpty && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
-          <div className="pointer-events-auto max-w-xs rounded-2xl border border-hairline bg-white/90 p-6 text-center shadow-card backdrop-blur">
+          <div className="pointer-events-auto max-w-xs cursor-default rounded-2xl border border-hairline bg-white/90 p-6 text-center shadow-card backdrop-blur">
             <h2 className="font-display text-lg text-ink">An empty board</h2>
             <p className="mt-1.5 text-sm leading-relaxed text-mist">
               Add someone to begin. You can link people in any order — no need to start
@@ -1296,7 +1333,7 @@ const Canvas = forwardRef(function Canvas(
       )}
 
       {/* Zoom pod. Also the touch fallback for people who can't scroll-zoom. */}
-      <div className="absolute bottom-4 right-4 flex items-center gap-0.5 rounded-xl border border-hairline bg-white/95 p-1 shadow-card backdrop-blur">
+      <div className="absolute bottom-4 right-4 flex cursor-default items-center gap-0.5 rounded-xl border border-hairline bg-white/95 p-1 shadow-card backdrop-blur">
         <ZoomButton label="Zoom out" onClick={() => zoomAround(1 / ZOOM_BUTTON_STEP, size.width / 2, size.height / 2)}>
           <span className="text-lg leading-none">−</span>
         </ZoomButton>

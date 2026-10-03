@@ -216,8 +216,12 @@ describe('a click then a quick right-click is not a double-click (F11)', () => {
 describe('panning the board (regression after F10)', () => {
   // A stand-in for the Konva event a mousedown on empty board produces.
   const boardTarget = { getStage() { return boardTarget; } };
-  const stageMouseDown = (button, x, y) =>
-    act(() => stage.props.onMouseDown({ target: boardTarget, evt: { button, clientX: x, clientY: y, preventDefault() {} } }));
+  const stageMouseDown = (button, x, y, shiftKey = false) =>
+    act(() =>
+      stage.props.onMouseDown({ target: boardTarget, evt: { button, shiftKey, clientX: x, clientY: y, preventDefault() {} } })
+    );
+  const mouseMove = (x, y, shiftKey = false) =>
+    act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: y, shiftKey })));
   const mouseUp = (x, y) => act(() => window.dispatchEvent(new MouseEvent('mouseup', { clientX: x, clientY: y })));
   const where = () => [stage.props.x, stage.props.y];
   const space = (el, type) =>
@@ -269,12 +273,44 @@ describe('panning the board (regression after F10)', () => {
     expect(where()).toEqual([30, 20]);
   });
 
-  it('a plain left-drag on empty board is still a selection box, not a pan', () => {
-    setup();
+  it('a plain left-drag on empty board pans, and selects nobody', () => {
+    const { onSelect, onSelectMany } = setup({ onSelect: vi.fn(), onSelectMany: vi.fn() });
     stageMouseDown(0, 100, 100);
-    act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 200, clientY: 200 })));
-    mouseUp(200, 200);
+    mouseMove(150, 130);
+    mouseUp(180, 150);
+    expect(where()).toEqual([80, 50]);
+    expect(onSelectMany).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('Shift + drag on empty board draws the selection box instead of panning', () => {
+    const { onSelectMany } = setup({ onSelectMany: vi.fn() });
+    // Board coordinates match the screen here (view at 0,0, scale 1): the
+    // box from (0,0) to (200,250) takes in Ann (x 100) but not Bea (card from x 221).
+    stageMouseDown(0, 0, 0, true);
+    mouseMove(200, 250, true);
+    mouseUp(200, 250);
+    expect(onSelectMany).toHaveBeenCalledWith(['a']);
     expect(where()).toEqual([0, 0]);
+  });
+
+  it('letting go of Shift halfway through keeps it a selection box', () => {
+    const { onSelectMany } = setup({ onSelectMany: vi.fn() });
+    stageMouseDown(0, 0, 0, true);
+    mouseMove(120, 120, false);
+    mouseMove(200, 250, false);
+    mouseUp(200, 250);
+    expect(onSelectMany).toHaveBeenCalledWith(['a']);
+    expect(where()).toEqual([0, 0]);
+  });
+
+  it('a wobble smaller than the click threshold is a click: no pan, the selection clears', () => {
+    const { onSelect } = setup({ onSelect: vi.fn(), selectedIds: ['a'] });
+    stageMouseDown(0, 100, 100);
+    mouseMove(102, 101);
+    mouseUp(102, 101);
+    expect(where()).toEqual([0, 0]);
+    expect(onSelect).toHaveBeenCalledWith(null);
   });
 });
 

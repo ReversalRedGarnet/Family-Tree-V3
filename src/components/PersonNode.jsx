@@ -153,7 +153,7 @@ function PersonNode({
       }}
       onMouseLeave={(e) => {
         const container = e.target.getStage()?.container();
-        if (container) container.style.cursor = 'default';
+        if (container) container.style.cursor = '';
       }}
     >
       {isCircle ? (
