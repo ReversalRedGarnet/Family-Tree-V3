@@ -138,7 +138,7 @@ src/
     RelationshipModal.jsx   Create or edit one link
     FormFields.jsx          Field style, label and year input shared by both dialogs
     ExportModal.jsx         Name, Look, PNG/PDF
-    ContextMenu.jsx         Right-click menu (person, line, or empty board)
+    ContextMenu.jsx         The menus: right-click, long-press, or a click on empty board
     ConfirmDialog.jsx       Yes/no question
     Modal.jsx               Shared dialog shell; only the top dialog takes keys
     Tooltip.jsx             Hover/focus tooltip and the (i) hint button
@@ -152,6 +152,7 @@ src/
     connectors.js           Line geometry, shared by drawing and drop detection
     viewport.js             Zoom limits and wheel/trackpad handling
     boardNav.js             Moving around the board with the keyboard
+    boardPointer.js         What a click or drag on empty board does (pan, select, menu)
     longPress.js            Long-press detection for touch screens
     history.js              Undo/redo stack (50 steps)
     storage.js              localStorage save, load checks, backups of unreadable saves
@@ -170,7 +171,8 @@ src/
 
 - Sidebar **Add person**, or the **Add the first person** button on an empty
   board. The new card goes in the middle of what you're looking at.
-- Right-click empty board → **Add a person here**.
+- Click empty board (with nobody selected) → **Add person here**, or
+  right-click empty board → **Add a person here**.
 - Right-click a card (or use **⋯** next to them in the people list):
   - **Add a parent** adds one parent above them. No second parent is needed.
   - **Add a child** adds a child below them. If they have exactly one current
@@ -232,12 +234,18 @@ layout**, or a new link that changes their generation.
 - With several people selected, dragging one of them moves them all sideways
   together.
 - A tiny wobble while clicking doesn't count as a move.
-- Drag on empty board to draw a selection box.
+- **Selecting several people:** hold Shift and drag on empty board to draw a
+  selection box. Without a Shift key (on a touch screen, say), click or tap
+  empty board → **Select multiple**, then drag a box round them; it's
+  one-shot, and Esc cancels it. **Select multiple** is in every board and
+  person menu too. While anyone is selected, a note at the top of the board
+  says how many, and that Esc or a click on empty board clears them.
 
 ### Pan and zoom
 
-- **Pan:** two-finger scroll on a trackpad (up/down and sideways), the middle
-  mouse button, Space + drag, or one finger on empty board on a touch screen.
+- **Pan:** drag on empty board to move around, or use two-finger scroll on a
+  trackpad (up/down and sideways), the middle mouse button, Space + drag, or
+  one finger on empty board on a touch screen.
   Space + drag works whatever has focus, except a text field or drop-down. If
   a button has focus, pressing Space on its own still presses it; a Space +
   drag pan doesn't.
@@ -272,7 +280,8 @@ several.
 
 - **Escape** closes only the dialog on top. With a question open over a form,
   the form and what you've typed in it stay. With a menu open, Escape closes
-  just the menu; with nothing open, it clears the selection.
+  just the menu; with **Select multiple** waiting for its drag, it cancels just
+  that; with nothing open, it clears the selection.
 - **Tab** stays inside the top dialog.
 - When a dialog closes, focus goes back to whatever opened it.
 - Fields that have an (i) hint are labelled for screen readers, with the hint
@@ -298,17 +307,21 @@ read out their name, years, and whether they're selected.
   the board, holding Space still pans.)
 - **Enter** opens the current person for editing.
 - **Shift+F10** or the **Menu** key opens their menu, the same one a
-  right-click opens. On an empty board it offers **Add a person here**.
+  right-click opens. On an empty board it offers **Add a person here** and
+  **Select multiple**.
 - **Delete** and **Backspace** delete the selection, as above.
 
 **Menus.** A menu opened from the keyboard starts on its first item; one opened
-by right-click or long-press takes focus without highlighting anything. **Up**
+by a click, tap, right-click or long-press takes focus without highlighting
+anything. **Up**
 and **Down** move between items (wrapping round), **Home** and **End** jump to
 the first and last, **Enter** or **Space** picks one, and **Escape** or **Tab**
 closes the menu. Focus goes back to where it was, including after a dialog
 that the item opened.
 
-**Touch.** Holding a finger still on a card or on the empty board for half a
+**Touch.** A tap on empty board works like a click: with nobody selected it
+opens **Add person here** / **Select multiple**, otherwise it clears the
+selection. Holding a finger still on a card or on the empty board for half a
 second opens the same menu a right-click does. Moving the finger first (to
 drag or pan), or putting down a second finger (to pinch), cancels it.
 
