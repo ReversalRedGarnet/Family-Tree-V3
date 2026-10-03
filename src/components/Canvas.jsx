@@ -116,7 +116,10 @@ function personIdOf(node, nodeRefs) {
 
 // Read out by screen readers when the board takes focus.
 const BOARD_KEYS_HELP =
-  'Arrow keys move between people and select them; Shift with an arrow adds to the selection. ' +
+  'With nobody selected or ringed, arrow keys pan the board; Shift pans further. ' +
+  'With someone selected or ringed, arrow keys move between people and select them; ' +
+  'Shift with an arrow adds to the selection. ' +
+  'Escape clears the selection and hides the ring, so the arrows pan again. ' +
   'Space selects or deselects. Enter edits. Shift+F10 or the Menu key opens the menu. ' +
   'Delete removes the selection.';
 

@@ -363,6 +363,17 @@ describe('arrow keys: pan unless a person is in play', () => {
     expect(where()).toEqual([-60, 0]);
   });
 
+  it("the board's screen-reader help says what the arrows really do (F17)", () => {
+    render(h(Board, propsFor({ a: person('a', 'Ann', 100) })));
+    const board = screen.getByRole('application', { name: 'Family tree board' });
+    const help = document.getElementById(board.getAttribute('aria-describedby')).textContent;
+    expect(help).toMatch(/With nobody selected or ringed, arrow keys pan the board; Shift pans further\./);
+    expect(help).toMatch(/With someone selected or ringed, arrow keys move between people/);
+    expect(help).toMatch(/Escape clears the selection and hides the ring, so the arrows pan again\./);
+    // The old text said this unconditionally, as its first sentence.
+    expect(help).not.toMatch(/^Arrow keys move between people/);
+  });
+
   it('arrows on another focused control are left to it', () => {
     render(h('div', null, h('button', null, 'Undo'), h(Board, propsFor({ a: person('a', 'Ann', 100) }))));
     const button = screen.getByText('Undo');
