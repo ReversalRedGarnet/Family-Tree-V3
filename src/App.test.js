@@ -17,7 +17,15 @@ const drive = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('./components/Canvas', () => ({ default: () => null }));
+// The stub keeps the props it was last given, so a test can do what the
+// board would do (open its click menu, for instance).
+const canvas = vi.hoisted(() => ({ props: null }));
+vi.mock('./components/Canvas', () => ({
+  default: (props) => {
+    canvas.props = props;
+    return null;
+  },
+}));
 vi.mock('./hooks/useDriveSync', () => ({ useDriveSync: () => drive.state }));
 
 import App from './App';
@@ -82,5 +90,30 @@ describe('Escape with stacked dialogs (F7)', () => {
     escape();
 
     expect(screen.getByText('0 selected')).toBeTruthy();
+  });
+});
+
+describe('the board click menu', () => {
+  const menuItems = () => screen.queryAllByRole('menuitem').map((b) => b.textContent);
+
+  it('a click on empty board with nobody selected offers Add person here, which adds someone there', () => {
+    render(h(App));
+    act(() => canvas.props.onBoardClickMenu(400, 300, 900));
+    expect(menuItems()).toEqual(['Add person here']);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Add person here' }));
+    expect(dialogTitles()).toContain('Add a person');
+  });
+
+  it('the right-click board menu keeps its own item', () => {
+    render(h(App));
+    act(() => canvas.props.onCanvasContextMenu(400, 300, 900));
+    expect(menuItems()).toEqual(['Add a person here']);
+  });
+
+  it('tells the board while a menu is open, so the click that closes it does nothing else', () => {
+    render(h(App));
+    expect(canvas.props.menuOpen).toBe(false);
+    act(() => canvas.props.onBoardClickMenu(400, 300, 900));
+    expect(canvas.props.menuOpen).toBe(true);
   });
 });

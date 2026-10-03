@@ -371,3 +371,80 @@ describe('arrow keys: pan unless a person is in play', () => {
     expect(where()).toEqual([0, 0]);
   });
 });
+
+describe('a click on empty board (no movement)', () => {
+  const boardTarget = { getStage() { return boardTarget; } };
+  const down = (x, y) =>
+    act(() => stage.props.onMouseDown({ target: boardTarget, evt: { button: 0, shiftKey: false, clientX: x, clientY: y, preventDefault() {} } }));
+  const move = (x, y) => act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: y })));
+  const up = (x, y) => act(() => window.dispatchEvent(new MouseEvent('mouseup', { clientX: x, clientY: y })));
+  const touchStart = (x, y) => act(() => stage.props.onTouchStart({ target: boardTarget, evt: { touches: [{ clientX: x, clientY: y }] } }));
+  const touchMove = (x, y) =>
+    act(() => stage.props.onTouchMove({ target: boardTarget, evt: { touches: [{ clientX: x, clientY: y }], preventDefault() {} } }));
+  const touchEnd = () => act(() => stage.props.onTouchEnd({ target: boardTarget, evt: { touches: [], cancelable: true, preventDefault() {} } }));
+
+  function setup(overrides = {}) {
+    const props = propsFor(
+      { a: person('a', 'Ann', 100), b: person('b', 'Bea', 300) },
+      { onSelect: vi.fn(), onBoardClickMenu: vi.fn(), ...overrides }
+    );
+    render(h(Board, props));
+    return props;
+  }
+
+  it('with nobody selected, opens the board menu at the click (with the board x for Add person here)', () => {
+    const { onSelect, onBoardClickMenu } = setup();
+    down(500, 400);
+    up(501, 400);
+    expect(onBoardClickMenu).toHaveBeenCalledWith(501, 400, 501);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('with someone selected, only clears the selection', () => {
+    const { onSelect, onBoardClickMenu } = setup({ selectedIds: ['a'] });
+    down(500, 400);
+    up(500, 400);
+    expect(onSelect).toHaveBeenCalledWith(null);
+    expect(onBoardClickMenu).not.toHaveBeenCalled();
+  });
+
+  it('the click that closes an open menu does nothing else', () => {
+    const { onSelect, onBoardClickMenu } = setup({ menuOpen: true });
+    down(500, 400);
+    up(500, 400);
+    expect(onBoardClickMenu).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('no menu after a pan or a selection box', () => {
+    const { onBoardClickMenu } = setup();
+    down(500, 400);
+    move(560, 430);
+    up(560, 430);
+    act(() =>
+      stage.props.onMouseDown({ target: boardTarget, evt: { button: 0, shiftKey: true, clientX: 500, clientY: 400, preventDefault() {} } })
+    );
+    move(600, 500);
+    up(600, 500);
+    expect(onBoardClickMenu).not.toHaveBeenCalled();
+  });
+
+  it('a tap is a click too; a finger that moves is a pan, not a tap', () => {
+    const { onBoardClickMenu } = setup();
+    touchStart(500, 400);
+    touchEnd();
+    expect(onBoardClickMenu).toHaveBeenCalledTimes(1);
+    touchStart(500, 400);
+    touchMove(540, 420);
+    touchEnd();
+    expect(onBoardClickMenu).toHaveBeenCalledTimes(1);
+  });
+
+  it('a tap with someone selected only clears the selection', () => {
+    const { onSelect, onBoardClickMenu } = setup({ selectedIds: ['a'] });
+    touchStart(500, 400);
+    touchEnd();
+    expect(onSelect).toHaveBeenCalledWith(null);
+    expect(onBoardClickMenu).not.toHaveBeenCalled();
+  });
+});

@@ -41,7 +41,8 @@ import {
 } from '../utils/boardNav';
 import { openModalCount } from './Modal';
 import { createLongPress } from '../utils/longPress';
-import { movedPast, pressMode } from '../utils/boardPointer';
+import { clickAction, movedPast, pressMode } from '../utils/boardPointer';
+import { LONG_PRESS_SLOP } from '../utils/longPress';
 
 // A touch-originated drag needs the wider, touch-tuned tolerances; a
 // mouse-originated one keeps the tighter mouse ones. Checked once, at the
@@ -130,6 +131,8 @@ const Canvas = forwardRef(function Canvas(
     onEditPerson,
     onPersonContextMenu,
     onCanvasContextMenu,
+    onBoardClickMenu,
+    menuOpen,
     onDropOverlap,
     onDropOnConnector,
     onRelationshipClick,
@@ -171,6 +174,8 @@ const Canvas = forwardRef(function Canvas(
   // to do this for us, but plain left-drag on empty canvas is now the
   // marquee gesture below, so panning is done by hand instead.
   const panRef = useRef(null);
+  // A finger down on empty board that may turn out to be a tap.
+  const boardTapRef = useRef(null);
   // A primary-button press on empty board, until it's clear whether it's a
   // click, a pan or a selection box (see utils/boardPointer.js).
   const boardPressRef = useRef(null);
@@ -377,6 +382,19 @@ const Canvas = forwardRef(function Canvas(
   }
   useEffect(() => () => longPressRef.current?.cancel(), []);
 
+  // A click (or tap) on empty board: with someone selected it clears the
+  // selection, with nobody selected it opens the small board menu there,
+  // and if it was the click that closed a menu it does nothing else.
+  const clickOnBoard = useCallback((clientX, clientY, menuWasOpen) => {
+    const { people: everyone, selectedIds: selected, onSelect: select, onBoardClickMenu: openMenu } = latest.current;
+    const action = clickAction({ menuWasOpen, hasSelection: selected.some((id) => everyone[id]) });
+    if (action === 'clear') select(null);
+    if (action !== 'menu' || !openMenu) return;
+    const box = containerRef.current?.getBoundingClientRect();
+    const v = viewRef.current;
+    openMenu(clientX, clientY, box ? (clientX - box.left - v.x) / v.scale : 0);
+  }, []);
+
   // Touch panning and pinch-zoom used to ride on Konva's own `draggable`
   // Stage, but that also has to be off now (plain left-drag on empty canvas
   // is the marquee gesture, mouse-side — see below), so both are done by
@@ -393,6 +411,7 @@ const Canvas = forwardRef(function Canvas(
       if (touches.length >= 2) {
         longPress.cancel();
         panRef.current = null;
+        boardTapRef.current = null;
         const [t1, t2] = touches;
         pinchRef.current = { dist: distance(t1, t2) };
         return;
@@ -420,6 +439,13 @@ const Canvas = forwardRef(function Canvas(
           startX: viewRef.current.x,
           startY: viewRef.current.y,
         };
+        boardTapRef.current = {
+          start: { x: t.clientX, y: t.clientY },
+          moved: false,
+          menuWasOpen: Boolean(latest.current?.menuOpen),
+        };
+      } else {
+        boardTapRef.current = null;
       }
     },
     [releaseHeldCard]
@@ -448,7 +474,13 @@ const Canvas = forwardRef(function Canvas(
         return;
       }
 
-      if (touches.length === 1) longPressRef.current.move(touches[0].clientX, touches[0].clientY);
+      if (touches.length === 1) {
+        longPressRef.current.move(touches[0].clientX, touches[0].clientY);
+        const tap = boardTapRef.current;
+        if (tap && movedPast(tap.start, { x: touches[0].clientX, y: touches[0].clientY }, LONG_PRESS_SLOP)) {
+          tap.moved = true;
+        }
+      }
 
       if (touches.length === 1 && panRef.current) {
         e.evt.preventDefault();
@@ -473,6 +505,14 @@ const Canvas = forwardRef(function Canvas(
     if (longPress.fired && e.evt.cancelable) e.evt.preventDefault();
 
     if (remaining.length === 0) {
+      // A tap on empty board (lifted before a long-press, without moving
+      // further than a held finger may drift) is a click.
+      const tap = boardTapRef.current;
+      boardTapRef.current = null;
+      if (tap && !tap.moved && !longPress.fired) {
+        if (e.evt.cancelable) e.evt.preventDefault();
+        clickOnBoard(tap.start.x, tap.start.y, tap.menuWasOpen);
+      }
       releaseHeldCard();
       pinchRef.current = null;
       const stage = stageRef.current;
@@ -495,7 +535,7 @@ const Canvas = forwardRef(function Canvas(
         startY: stage ? stage.y() : viewRef.current.y,
       };
     }
-  }, [releaseHeldCard]);
+  }, [releaseHeldCard, clickOnBoard]);
 
   // ---- Mouse: pan and selection box ----
   //
@@ -591,8 +631,7 @@ const Canvas = forwardRef(function Canvas(
       if (!press) return;
 
       if (!press.moved) {
-        // A click on empty board clears the selection, as it always has.
-        onSelect(null);
+        clickOnBoard(e.clientX, e.clientY, press.menuWasOpen);
         return;
       }
 
@@ -615,7 +654,7 @@ const Canvas = forwardRef(function Canvas(
       setMarqueeRect(null);
       if (rect) finishMarqueeSelection(rect);
     },
-    [handleBoardPressMove, finishMarqueeSelection, onSelect]
+    [handleBoardPressMove, finishMarqueeSelection, clickOnBoard]
   );
 
   const handleStageMouseDown = useCallback(
@@ -645,6 +684,9 @@ const Canvas = forwardRef(function Canvas(
         startView: { x: viewRef.current.x, y: viewRef.current.y },
         mode: pressMode({ shiftKey: e.evt.shiftKey }),
         moved: false,
+        // The board menu closes on this same press; the click then mustn't
+        // also do something.
+        menuWasOpen: Boolean(latest.current?.menuOpen),
       };
       window.addEventListener('mousemove', handleBoardPressMove);
       window.addEventListener('mouseup', handleBoardPressUp);
@@ -679,6 +721,8 @@ const Canvas = forwardRef(function Canvas(
     onDropOnConnector,
     onMovePerson,
     onMoveMany,
+    onBoardClickMenu,
+    menuOpen,
   };
   // Whether the drag in progress is a finger's. Set the moment it starts,
   // so the drop checks use the right tolerances from the first move on.
@@ -920,12 +964,14 @@ const Canvas = forwardRef(function Canvas(
 
   // ---- Stage-level events ----
 
-  // A primary-button mouse click on empty board is decided by the press
-  // handlers above (Konva calls it a click even after the mouse has moved).
-  // A tap, and a click with any other button, still clear the selection here.
+  // A primary-button click and a tap on empty board are decided by the
+  // press and touch handlers above (Konva calls it a click even after the
+  // pointer has moved). A click with any other button still clears the
+  // selection here, as it always has.
   const handleStageClick = useCallback(
     (e) => {
       if (endsLongPress(e, longPressRef.current)) return;
+      if (isTouchEvent(e.evt)) return;
       if (e.evt?.type?.startsWith('mouse') && e.evt.button === 0) return;
       if (e.target === e.target.getStage()) onSelect(null);
     },

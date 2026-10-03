@@ -696,6 +696,20 @@ export default function App() {
     [openAddPerson]
   );
 
+  // A plain click (or tap) on empty board with nobody selected. "Add person
+  // here" does exactly what the right-click item does, at the click.
+  const handleBoardClickMenu = useCallback(
+    (clientX, clientY, worldX) => {
+      setContextMenu({
+        open: true,
+        x: clientX,
+        y: clientY,
+        items: [{ label: 'Add person here', onSelect: () => openAddPerson({ kind: 'root', x: worldX }) }],
+      });
+    },
+    [openAddPerson]
+  );
+
   // ---------- Export ----------
 
   const runExport = useCallback(
@@ -870,6 +884,8 @@ export default function App() {
           onEditPerson={openEditPerson}
           onPersonContextMenu={handlePersonMenu}
           onCanvasContextMenu={handleBoardMenu}
+          onBoardClickMenu={handleBoardClickMenu}
+          menuOpen={contextMenu.open}
           onDropOverlap={(aId, bId) => openLinkModal(aId, bId, 'partner')}
           onDropOnConnector={handleDropOnConnector}
           onRelationshipClick={handleRelationshipClick}
