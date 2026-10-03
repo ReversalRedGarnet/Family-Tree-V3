@@ -186,6 +186,9 @@ export const CARD_BAND_HEIGHT = 20; // the memorial band along a deceased card's
 export const BOARD_PADDING = 140;
 // One press of the zoom buttons zooms in or out by this factor.
 export const ZOOM_BUTTON_STEP = 1.2;
+// The hint chip at the top of the board (Select multiple, N selected):
+// ink on white, checked against 4.5:1 in contrast.test.js.
+export const BOARD_CHIP = { text: '#103A44', background: '#FFFFFF', border: '#D3E7EB' };
 // How far an arrow key pans the board, in screen pixels (with Shift: the
 // larger step).
 export const ARROW_PAN_STEP = 60;

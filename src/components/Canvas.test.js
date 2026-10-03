@@ -448,3 +448,95 @@ describe('a click on empty board (no movement)', () => {
     expect(onBoardClickMenu).not.toHaveBeenCalled();
   });
 });
+
+describe('Select multiple (armed tool) and the hint chip', () => {
+  const boardTarget = { getStage() { return boardTarget; } };
+  const down = (x, y) =>
+    act(() => stage.props.onMouseDown({ target: boardTarget, evt: { button: 0, shiftKey: false, clientX: x, clientY: y, preventDefault() {} } }));
+  const move = (x, y) => act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: y })));
+  const up = (x, y) => act(() => window.dispatchEvent(new MouseEvent('mouseup', { clientX: x, clientY: y })));
+  const where = () => [stage.props.x, stage.props.y];
+  const chip = () => screen.getByRole('status', { hidden: true });
+
+  function setup(overrides = {}) {
+    const props = propsFor(
+      { a: person('a', 'Ann', 100), b: person('b', 'Bea', 300) },
+      { selectArmed: true, onSelectArmedChange: vi.fn(), onSelectMany: vi.fn(), onBoardClickMenu: vi.fn(), onSelect: vi.fn(), ...overrides }
+    );
+    const utils = render(h(Board, props));
+    return { ...props, ...utils };
+  }
+
+  it('armed, a left-drag draws the box instead of panning, selects who it caught, then disarms', () => {
+    const { onSelectMany, onSelectArmedChange } = setup();
+    down(0, 0);
+    move(100, 100);
+    up(200, 250);
+    expect(where()).toEqual([0, 0]);
+    expect(onSelectMany).toHaveBeenCalledWith(['a']);
+    expect(onSelectArmedChange).toHaveBeenCalledWith(false);
+  });
+
+  it('armed, a box that catches nobody leaves the selection as it was, and disarms', () => {
+    const { onSelectMany, onSelect, onSelectArmedChange } = setup({ selectedIds: ['b'] });
+    down(600, 500);
+    move(650, 550);
+    up(700, 600);
+    expect(onSelectMany).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onSelectArmedChange).toHaveBeenCalledWith(false);
+  });
+
+  it('armed, a click just cancels it: no menu', () => {
+    const { onBoardClickMenu, onSelectArmedChange } = setup();
+    down(600, 500);
+    up(600, 500);
+    expect(onSelectArmedChange).toHaveBeenCalledWith(false);
+    expect(onBoardClickMenu).not.toHaveBeenCalled();
+  });
+
+  it('Escape cancels the armed tool and nothing else reaches the app', () => {
+    const appEscape = vi.fn();
+    window.addEventListener('keydown', appEscape);
+    try {
+      const { onSelectArmedChange } = setup({ selectedIds: ['a'] });
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(onSelectArmedChange).toHaveBeenCalledWith(false);
+      expect(appEscape).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', appEscape);
+    }
+  });
+
+  it('starting a drag on a card still moves the card, and disarms the tool', () => {
+    const { onSelectArmedChange } = setup();
+    const card = groups.get(100);
+    const node = { x: () => 100, y: () => 120, position() {}, getLayer: () => ({ batchDraw() {} }), zIndex: () => 0, moveTo() {} };
+    act(() => card.onDragStart({ target: node, evt: { type: 'mousedown' } }));
+    expect(onSelectArmedChange).toHaveBeenCalledWith(false);
+    act(() => card.onDragEnd({ target: node, evt: { type: 'mouseup' } }));
+  });
+
+  it('armed on touch: a one-finger drag draws the box', () => {
+    const { onSelectMany, onSelectArmedChange } = setup();
+    act(() => stage.props.onTouchStart({ target: boardTarget, evt: { touches: [{ clientX: 0, clientY: 0 }] } }));
+    act(() => stage.props.onTouchMove({ target: boardTarget, evt: { touches: [{ clientX: 200, clientY: 250 }], preventDefault() {} } }));
+    act(() => stage.props.onTouchEnd({ target: boardTarget, evt: { touches: [], cancelable: true, preventDefault() {} } }));
+    expect(onSelectMany).toHaveBeenCalledWith(['a']);
+    expect(onSelectArmedChange).toHaveBeenCalledWith(false);
+    expect(where()).toEqual([0, 0]);
+  });
+
+  it('the chip says what the armed tool does, then how many are selected', () => {
+    const props = { onSelectArmedChange: vi.fn() };
+    const { rerender } = render(
+      h(Board, propsFor({ a: person('a', 'Ann', 100), b: person('b', 'Bea', 300) }, { ...props, selectArmed: true }))
+    );
+    expect(chip().textContent).toBe('Drag to select people · Esc to cancel');
+    rerender(h(Board, propsFor({ a: person('a', 'Ann', 100), b: person('b', 'Bea', 300) }, { ...props, selectArmed: false, selectedIds: ['a', 'b'] })));
+    expect(chip().textContent).toBe('2 selected · drag to move · Esc or click empty space to clear');
+    rerender(h(Board, propsFor({ a: person('a', 'Ann', 100), b: person('b', 'Bea', 300) }, { ...props, selectArmed: false, selectedIds: [] })));
+    expect(chip().textContent).toBe('');
+    expect(chip().getAttribute('aria-live')).toBe('polite');
+  });
+});

@@ -21,6 +21,7 @@ import {
   BOARD_PADDING,
   ZOOM_BUTTON_STEP,
   MARQUEE_THRESHOLD,
+  BOARD_CHIP,
   ARROW_PAN_STEP,
   ARROW_PAN_STEP_LARGE,
   shapeForGender,
@@ -41,7 +42,7 @@ import {
 } from '../utils/boardNav';
 import { openModalCount } from './Modal';
 import { createLongPress } from '../utils/longPress';
-import { clickAction, movedPast, pressMode } from '../utils/boardPointer';
+import { boxResult, chipText, clickAction, movedPast, pressMode } from '../utils/boardPointer';
 import { LONG_PRESS_SLOP } from '../utils/longPress';
 
 // A touch-originated drag needs the wider, touch-tuned tolerances; a
@@ -81,6 +82,26 @@ function distance(t1, t2) {
 // whole answer, so it doesn't also change the selection.
 function endsLongPress(e, longPress) {
   return isTouchEvent(e.evt) && longPress.fired;
+}
+
+// Everyone whose card overlaps the box (board coordinates).
+function peopleInBox(people, rect) {
+  const left = Math.min(rect.x0, rect.x1);
+  const right = Math.max(rect.x0, rect.x1);
+  const top = Math.min(rect.y0, rect.y1);
+  const bottom = Math.max(rect.y0, rect.y1);
+  return Object.entries(people)
+    .filter(([, person]) => {
+      const px = person.position?.x ?? 0;
+      const py = person.position?.y ?? 0;
+      return (
+        px - CARD_WIDTH / 2 <= right &&
+        px + CARD_WIDTH / 2 >= left &&
+        py - CARD_HEIGHT / 2 <= bottom &&
+        py + CARD_HEIGHT / 2 >= top
+      );
+    })
+    .map(([id]) => id);
 }
 
 // The person whose card `node` belongs to (the card itself or anything
@@ -133,6 +154,8 @@ const Canvas = forwardRef(function Canvas(
     onCanvasContextMenu,
     onBoardClickMenu,
     menuOpen,
+    selectArmed,
+    onSelectArmedChange,
     onDropOverlap,
     onDropOnConnector,
     onRelationshipClick,
@@ -242,6 +265,20 @@ const Canvas = forwardRef(function Canvas(
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
+  }, []);
+
+  // Escape while "Select multiple" is armed cancels the tool and nothing
+  // else: caught on the way down, so App's own Escape (which clears the
+  // selection) never sees it. An open menu or dialog keeps its Escape.
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key !== 'Escape' || !latest.current?.selectArmed) return;
+      if (latest.current.menuOpen || openModalCount() > 0) return;
+      e.stopPropagation();
+      latest.current.onSelectArmedChange?.(false);
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, []);
 
   // Konva paints text to a bitmap, so it won't pick up Proxima Nova on its
@@ -382,17 +419,65 @@ const Canvas = forwardRef(function Canvas(
   }
   useEffect(() => () => longPressRef.current?.cancel(), []);
 
-  // A click (or tap) on empty board: with someone selected it clears the
-  // selection, with nobody selected it opens the small board menu there,
-  // and if it was the click that closed a menu it does nothing else.
+  // A click (or tap) on empty board: with "Select multiple" armed it just
+  // cancels that; with someone selected it clears the selection; with nobody
+  // selected it opens the small board menu there; and if it was the click
+  // that closed a menu it does nothing else.
   const clickOnBoard = useCallback((clientX, clientY, menuWasOpen) => {
-    const { people: everyone, selectedIds: selected, onSelect: select, onBoardClickMenu: openMenu } = latest.current;
-    const action = clickAction({ menuWasOpen, hasSelection: selected.some((id) => everyone[id]) });
+    const {
+      people: everyone,
+      selectedIds: selected,
+      onSelect: select,
+      onBoardClickMenu: openMenu,
+      selectArmed: armed,
+      onSelectArmedChange: setArmed,
+    } = latest.current;
+    const action = clickAction({ menuWasOpen, armed, hasSelection: selected.some((id) => everyone[id]) });
+    if (action === 'disarm') setArmed?.(false);
     if (action === 'clear') select(null);
     if (action !== 'menu' || !openMenu) return;
     const box = containerRef.current?.getBoundingClientRect();
     const v = viewRef.current;
     openMenu(clientX, clientY, box ? (clientX - box.left - v.x) / v.scale : 0);
+  }, []);
+
+  // The selection box between two screen points, in board coordinates.
+  const boxBetween = useCallback((start, point) => {
+    const box = containerRef.current?.getBoundingClientRect();
+    if (!box) return null;
+    const v = viewRef.current;
+    return {
+      x0: (start.x - box.left - v.x) / v.scale,
+      y0: (start.y - box.top - v.y) / v.scale,
+      x1: (point.x - box.left - v.x) / v.scale,
+      y1: (point.y - box.top - v.y) / v.scale,
+    };
+  }, []);
+
+  const showBox = useCallback(
+    (start, point) => {
+      const rect = boxBetween(start, point);
+      if (!rect) return;
+      marqueeRectRef.current = rect;
+      setMarqueeRect(rect);
+    },
+    [boxBetween]
+  );
+
+  // A selection box is finished: select whoever it caught (see boxResult
+  // for the Shift box vs the armed tool), and disarm the tool if it was
+  // that. Reads the last box from the ref, not a state updater: calling
+  // another component's setState from inside one trips React's "cannot
+  // update a component while rendering a different one" guard.
+  const finishBox = useCallback((mode) => {
+    const rect = marqueeRectRef.current;
+    marqueeRectRef.current = null;
+    setMarqueeRect(null);
+    const { people: everyone, onSelectMany: selectMany, onSelectArmedChange: setArmed } = latest.current;
+    const ids = rect ? peopleInBox(everyone, rect) : [];
+    const result = boxResult(mode, ids);
+    if (result.select) selectMany(result.select);
+    if (result.disarm) setArmed?.(false);
   }, []);
 
   // Touch panning and pinch-zoom used to ride on Konva's own `draggable`
@@ -411,6 +496,12 @@ const Canvas = forwardRef(function Canvas(
       if (touches.length >= 2) {
         longPress.cancel();
         panRef.current = null;
+        // A second finger means a pinch: any box the first finger had
+        // started is dropped (the tool stays armed).
+        if (boardTapRef.current?.mode === 'select') {
+          marqueeRectRef.current = null;
+          setMarqueeRect(null);
+        }
         boardTapRef.current = null;
         const [t1, t2] = touches;
         pinchRef.current = { dist: distance(t1, t2) };
@@ -421,6 +512,20 @@ const Canvas = forwardRef(function Canvas(
       releaseHeldCard();
       const onBoard = e.target === e.target.getStage();
       const personId = onBoard ? null : personIdOf(e.target, nodeRefs.current);
+      const armed = Boolean(latest.current?.selectArmed);
+      if (onBoard && armed) {
+        // The armed tool: this finger draws the selection box, so no
+        // long-press and no pan.
+        longPress.cancel();
+        panRef.current = null;
+        boardTapRef.current = {
+          start: { x: t.clientX, y: t.clientY },
+          moved: false,
+          menuWasOpen: Boolean(latest.current?.menuOpen),
+          mode: 'select',
+        };
+        return;
+      }
       if (personId) {
         longPress.start(t.clientX, t.clientY, { personId });
       } else if (onBoard) {
@@ -443,6 +548,7 @@ const Canvas = forwardRef(function Canvas(
           start: { x: t.clientX, y: t.clientY },
           moved: false,
           menuWasOpen: Boolean(latest.current?.menuOpen),
+          mode: 'pan',
         };
       } else {
         boardTapRef.current = null;
@@ -477,8 +583,12 @@ const Canvas = forwardRef(function Canvas(
       if (touches.length === 1) {
         longPressRef.current.move(touches[0].clientX, touches[0].clientY);
         const tap = boardTapRef.current;
-        if (tap && movedPast(tap.start, { x: touches[0].clientX, y: touches[0].clientY }, LONG_PRESS_SLOP)) {
-          tap.moved = true;
+        const point = { x: touches[0].clientX, y: touches[0].clientY };
+        if (tap && movedPast(tap.start, point, LONG_PRESS_SLOP)) tap.moved = true;
+        if (tap?.mode === 'select') {
+          e.evt.preventDefault();
+          if (tap.moved) showBox(tap.start, point);
+          return;
         }
       }
 
@@ -492,7 +602,7 @@ const Canvas = forwardRef(function Canvas(
         stage.batchDraw();
       }
     },
-    [zoomAround]
+    [zoomAround, showBox]
   );
 
   const handleTouchEnd = useCallback((e) => {
@@ -509,7 +619,10 @@ const Canvas = forwardRef(function Canvas(
       // further than a held finger may drift) is a click.
       const tap = boardTapRef.current;
       boardTapRef.current = null;
-      if (tap && !tap.moved && !longPress.fired) {
+      if (tap?.mode === 'select' && tap.moved) {
+        if (e.evt.cancelable) e.evt.preventDefault();
+        finishBox('select');
+      } else if (tap && !tap.moved && !longPress.fired) {
         if (e.evt.cancelable) e.evt.preventDefault();
         clickOnBoard(tap.start.x, tap.start.y, tap.menuWasOpen);
       }
@@ -535,7 +648,7 @@ const Canvas = forwardRef(function Canvas(
         startY: stage ? stage.y() : viewRef.current.y,
       };
     }
-  }, [releaseHeldCard, clickOnBoard]);
+  }, [releaseHeldCard, clickOnBoard, finishBox]);
 
   // ---- Mouse: pan and selection box ----
   //
@@ -567,29 +680,6 @@ const Canvas = forwardRef(function Canvas(
     }));
   }, [handlePanMouseMove]);
 
-  const finishMarqueeSelection = useCallback(
-    (rect) => {
-      const left = Math.min(rect.x0, rect.x1);
-      const right = Math.max(rect.x0, rect.x1);
-      const top = Math.min(rect.y0, rect.y1);
-      const bottom = Math.max(rect.y0, rect.y1);
-      const ids = Object.entries(people)
-        .filter(([, person]) => {
-          const px = person.position?.x ?? 0;
-          const py = person.position?.y ?? 0;
-          return (
-            px - CARD_WIDTH / 2 <= right &&
-            px + CARD_WIDTH / 2 >= left &&
-            py - CARD_HEIGHT / 2 <= bottom &&
-            py + CARD_HEIGHT / 2 >= top
-          );
-        })
-        .map(([id]) => id);
-      onSelectMany(ids);
-    },
-    [people, onSelectMany]
-  );
-
   const handleBoardPressMove = useCallback((e) => {
     const press = boardPressRef.current;
     if (!press) return;
@@ -609,18 +699,8 @@ const Canvas = forwardRef(function Canvas(
       return;
     }
 
-    const box = containerRef.current?.getBoundingClientRect();
-    if (!box) return;
-    const v = viewRef.current;
-    const rect = {
-      x0: (press.start.x - box.left - v.x) / v.scale,
-      y0: (press.start.y - box.top - v.y) / v.scale,
-      x1: (point.x - box.left - v.x) / v.scale,
-      y1: (point.y - box.top - v.y) / v.scale,
-    };
-    marqueeRectRef.current = rect;
-    setMarqueeRect(rect);
-  }, []);
+    showBox(press.start, point);
+  }, [showBox]);
 
   const handleBoardPressUp = useCallback(
     (e) => {
@@ -645,16 +725,9 @@ const Canvas = forwardRef(function Canvas(
         return;
       }
 
-      // Read the last rect from the ref rather than a setState functional
-      // updater: calling another component's setState (onSelectMany) from
-      // inside a state updater trips React's "cannot update a component
-      // while rendering a different one" guard.
-      const rect = marqueeRectRef.current;
-      marqueeRectRef.current = null;
-      setMarqueeRect(null);
-      if (rect) finishMarqueeSelection(rect);
+      finishBox(press.mode);
     },
-    [handleBoardPressMove, finishMarqueeSelection, clickOnBoard]
+    [handleBoardPressMove, finishBox, clickOnBoard]
   );
 
   const handleStageMouseDown = useCallback(
@@ -682,7 +755,7 @@ const Canvas = forwardRef(function Canvas(
       boardPressRef.current = {
         start: { x: e.evt.clientX, y: e.evt.clientY },
         startView: { x: viewRef.current.x, y: viewRef.current.y },
-        mode: pressMode({ shiftKey: e.evt.shiftKey }),
+        mode: pressMode({ shiftKey: e.evt.shiftKey, armed: Boolean(latest.current?.selectArmed) }),
         moved: false,
         // The board menu closes on this same press; the click then mustn't
         // also do something.
@@ -714,6 +787,7 @@ const Canvas = forwardRef(function Canvas(
     selectedIds,
     connectors,
     onSelect,
+    onSelectMany,
     onEditPerson,
     onPersonContextMenu,
     onConflictClick,
@@ -723,6 +797,8 @@ const Canvas = forwardRef(function Canvas(
     onMoveMany,
     onBoardClickMenu,
     menuOpen,
+    selectArmed,
+    onSelectArmedChange,
   };
   // Whether the drag in progress is a finger's. Set the moment it starts,
   // so the drop checks use the right tolerances from the first move on.
@@ -798,6 +874,7 @@ const Canvas = forwardRef(function Canvas(
   const handleDragStart = useCallback(
     (personId, e) => {
       const { people, selectedIds } = latest.current;
+      if (latest.current.selectArmed) latest.current.onSelectArmedChange?.(false);
       // Moving the card means it wasn't a hold.
       longPressRef.current.cancel();
       touchDragRef.current = isTouchEvent(e?.evt);
@@ -929,6 +1006,7 @@ const Canvas = forwardRef(function Canvas(
   const handlePersonClick = useCallback(
     (personId, e) => {
       if (endsLongPress(e, longPressRef.current)) return;
+      if (latest.current.selectArmed) latest.current.onSelectArmedChange?.(false);
       setCurrentId(personId);
       latest.current.onSelect(personId, e.evt.shiftKey || e.evt.metaKey || isTouchEvent(e.evt));
     },
@@ -1192,6 +1270,12 @@ const Canvas = forwardRef(function Canvas(
 
   const isEmpty = Object.keys(people).length === 0;
 
+  // The hint chip: what the armed tool does, or how many are selected and
+  // what to do with them. Gives way to the touch-drag banner, which sits in
+  // the same spot and says something more urgent.
+  const selectedCount = selectedIds.filter((id) => people[id]).length;
+  const chip = exportTheme ? null : chipText({ armed: Boolean(selectArmed), selectedCount });
+
   // The whole point of this banner: on a touch drag, the finger sits right
   // on top of the highlight that would otherwise say what's about to
   // happen. A fixed-position line of text, safely away from wherever the
@@ -1215,7 +1299,7 @@ const Canvas = forwardRef(function Canvas(
     <div
       ref={containerRef}
       className="board-surface relative h-full w-full touch-none overflow-hidden"
-      style={{ cursor: grabbing ? 'grabbing' : 'grab' }}
+      style={{ cursor: grabbing ? 'grabbing' : selectArmed ? 'crosshair' : 'grab' }}
       tabIndex={0}
       role="application"
       aria-label="Family tree board"
@@ -1349,6 +1433,24 @@ const Canvas = forwardRef(function Canvas(
             captures the first layer only, so it never shows up there. */}
         <Layer ref={dragLayerRef} />
       </Stage>
+
+      {/* The hint chip. The live region is always there (so screen readers
+          announce each change); the pill inside only when there's a hint.
+          On phones it sits below the Menu button. */}
+      <div
+        role="status"
+        aria-live="polite"
+        className="pointer-events-none absolute left-1/2 top-[4.25rem] z-10 w-max max-w-[88%] -translate-x-1/2 md:top-3"
+      >
+        {chip && !dropHint && (
+          <div
+            className="rounded-xl border px-3.5 py-2 text-center text-xs font-medium shadow-card"
+            style={{ color: BOARD_CHIP.text, background: BOARD_CHIP.background, borderColor: BOARD_CHIP.border }}
+          >
+            {chip}
+          </div>
+        )}
+      </div>
 
       {/* Touch-drag only: says in words what the hover highlight can't,
           because the finger doing the dragging is sitting right on top of

@@ -72,6 +72,10 @@ export default function App() {
   const [activeExportTheme, setActiveExportTheme] = useState(null);
   const { current: confirmState, ask: askConfirm, resolve: resolveConfirm } = useConfirmQueue();
   const [contextMenu, setContextMenu] = useState(CLOSED_MENU);
+  // "Select multiple": armed until the next drag on empty board (or Esc, or
+  // a click) -- see Canvas.jsx.
+  const [selectArmed, setSelectArmed] = useState(false);
+  const armSelect = useCallback(() => setSelectArmed(true), []);
 
   const { people, relationships, loadRepairedCount, selectedIds, generation, conflicts } = tree;
   const drive = useDriveSync({
@@ -667,6 +671,7 @@ export default function App() {
             onSelect: () => openAddPerson({ kind: 'sibling', siblingId: id }),
           },
           { divider: true },
+          { label: 'Select multiple', onSelect: armSelect },
           { label: 'Delete', danger: true, onSelect: () => requestDeletePerson(id) },
         ],
       });
@@ -681,6 +686,7 @@ export default function App() {
       requestDeletePerson,
       nameOf,
       isMobile,
+      armSelect,
     ]
   );
 
@@ -690,10 +696,13 @@ export default function App() {
         open: true,
         x: clientX,
         y: clientY,
-        items: [{ label: 'Add a person here', onSelect: () => openAddPerson({ kind: 'root', x: worldX }) }],
+        items: [
+          { label: 'Add a person here', onSelect: () => openAddPerson({ kind: 'root', x: worldX }) },
+          { label: 'Select multiple', onSelect: armSelect },
+        ],
       });
     },
-    [openAddPerson]
+    [openAddPerson, armSelect]
   );
 
   // A plain click (or tap) on empty board with nobody selected. "Add person
@@ -704,10 +713,13 @@ export default function App() {
         open: true,
         x: clientX,
         y: clientY,
-        items: [{ label: 'Add person here', onSelect: () => openAddPerson({ kind: 'root', x: worldX }) }],
+        items: [
+          { label: 'Add person here', onSelect: () => openAddPerson({ kind: 'root', x: worldX }) },
+          { label: 'Select multiple', onSelect: armSelect },
+        ],
       });
     },
-    [openAddPerson]
+    [openAddPerson, armSelect]
   );
 
   // ---------- Export ----------
@@ -886,6 +898,8 @@ export default function App() {
           onCanvasContextMenu={handleBoardMenu}
           onBoardClickMenu={handleBoardClickMenu}
           menuOpen={contextMenu.open}
+          selectArmed={selectArmed}
+          onSelectArmedChange={setSelectArmed}
           onDropOverlap={(aId, bId) => openLinkModal(aId, bId, 'partner')}
           onDropOnConnector={handleDropOnConnector}
           onRelationshipClick={handleRelationshipClick}

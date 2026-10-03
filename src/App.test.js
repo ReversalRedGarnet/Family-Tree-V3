@@ -99,15 +99,15 @@ describe('the board click menu', () => {
   it('a click on empty board with nobody selected offers Add person here, which adds someone there', () => {
     render(h(App));
     act(() => canvas.props.onBoardClickMenu(400, 300, 900));
-    expect(menuItems()).toEqual(['Add person here']);
+    expect(menuItems()).toEqual(['Add person here', 'Select multiple']);
     fireEvent.click(screen.getByRole('menuitem', { name: 'Add person here' }));
     expect(dialogTitles()).toContain('Add a person');
   });
 
-  it('the right-click board menu keeps its own item', () => {
+  it('the right-click board menu keeps its own item and gains Select multiple', () => {
     render(h(App));
     act(() => canvas.props.onCanvasContextMenu(400, 300, 900));
-    expect(menuItems()).toEqual(['Add a person here']);
+    expect(menuItems()).toEqual(['Add a person here', 'Select multiple']);
   });
 
   it('tells the board while a menu is open, so the click that closes it does nothing else', () => {
@@ -115,5 +115,28 @@ describe('the board click menu', () => {
     expect(canvas.props.menuOpen).toBe(false);
     act(() => canvas.props.onBoardClickMenu(400, 300, 900));
     expect(canvas.props.menuOpen).toBe(true);
+  });
+});
+
+describe('Select multiple', () => {
+  const menuItems = () => screen.queryAllByRole('menuitem').map((b) => b.textContent);
+
+  it('choosing it from the board click menu arms the tool on the board', () => {
+    render(h(App));
+    expect(canvas.props.selectArmed).toBe(false);
+    act(() => canvas.props.onBoardClickMenu(400, 300, 900));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Select multiple' }));
+    expect(canvas.props.selectArmed).toBe(true);
+    act(() => canvas.props.onSelectArmedChange(false));
+    expect(canvas.props.selectArmed).toBe(false);
+  });
+
+  it('a person menu (right-click or long-press) offers it too, just before Delete', () => {
+    render(h(App));
+    act(() => canvas.props.onPersonContextMenu('a', 400, 300));
+    const items = menuItems();
+    expect(items.slice(-2)).toEqual(['Select multiple', 'Delete']);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Select multiple' }));
+    expect(canvas.props.selectArmed).toBe(true);
   });
 });

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import tailwind from '../../tailwind.config.js';
-import { EXPORT_THEMES, LINE_STYLES } from './constants';
+import { BOARD_CHIP, EXPORT_THEMES, LINE_STYLES } from './constants';
 import ErrorBoundary from '../components/ErrorBoundary';
 
 // '#0B6E7C', '#fff' or 'rgb(11, 110, 124)' -> [r, g, b]
@@ -45,6 +45,10 @@ describe('contrast (M4)', () => {
   it('white text on the primary-button colour clears 4.5:1', () => {
     expect(contrast(WHITE, c.cyan.deep)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(WHITE, c.rose)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('the board hint chip (Select multiple, N selected) clears 4.5:1', () => {
+    expect(contrast(BOARD_CHIP.text, BOARD_CHIP.background)).toBeGreaterThanOrEqual(4.5);
   });
 
   it('every relationship line clears 3:1 against the board', () => {
